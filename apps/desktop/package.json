@@ -1,6 +1,6 @@
 {
   "name": "@soullink/desktop",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "SoulLink Overlay desktop client (Electron + Vite + React)",
   "author": "SoulLink Overlay",
@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@soullink/shared": "*",
+    "electron-updater": "^6.8.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "ws": "^8.18.0",
@@ -66,21 +67,32 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "artifactName": "${productName}-Setup-${version}.${ext}"
+      "artifactName": "SoulLink-Overlay-Setup-${version}.${ext}"
     },
     "portable": {
-      "artifactName": "${productName}-Portable-${version}.${ext}"
-    }
+      "artifactName": "SoulLink-Overlay-Portable-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Shukaaa",
+        "repo": "soullink-desktop-overlay"
+      }
+    ]
   }
 }

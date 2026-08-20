@@ -11,6 +11,7 @@ import { AccordionItem } from '../components/AccordionItem';
 import { getPanelVisibility } from './visibility';
 import { nextAccordionSection, toggleAccordionSection, type AccordionSection } from './accordion';
 import { filterSavesByServerUrl } from './saveFilter';
+import { INITIAL_UPDATER_STATE, reduceUpdaterEvent, type UpdaterState } from './updater';
 
 /** Human-readable label for the compact status tag shown once a connection
  * attempt has started (see `showConnectionForm` below). The 'open' case is
@@ -30,6 +31,26 @@ function connectionStatusLabel(
       return 'Getrennt';
     default:
       return 'Verbindungsstatus';
+  }
+}
+
+/** Human-readable status line for the update panel, shown below the app version. */
+function updaterStatusText(state: UpdaterState): string {
+  switch (state.status) {
+    case 'checking':
+      return 'Suche nach Updates…';
+    case 'available':
+      return `Update verfügbar: Version ${state.availableVersion}`;
+    case 'downloading':
+      return `Update wird heruntergeladen… ${Math.round(state.progress?.percent ?? 0)}%`;
+    case 'downloaded':
+      return `Update heruntergeladen (Version ${state.availableVersion}). Bereit zur Installation.`;
+    case 'not-available':
+      return 'Du verwendest bereits die aktuelle Version.';
+    case 'error':
+      return `Update-Prüfung fehlgeschlagen: ${state.errorMessage ?? 'Unbekannter Fehler'}`;
+    default:
+      return '';
   }
 }
 
@@ -76,6 +97,7 @@ export function App() {
   const [successAlert, setSuccessAlert] = useState<string | null>(null);
   const successAlertTimerRef = useRef<number | null>(null);
   const [openSection, setOpenSection] = useState<AccordionSection>('lobby');
+  const [updaterState, setUpdaterState] = useState<UpdaterState>(INITIAL_UPDATER_STATE);
 
   useEffect(() => {
     window.api.loadAutosave().then((save) => {
@@ -89,6 +111,12 @@ export function App() {
     refreshSaves();
     refreshHistory();
     const unsubscribe = window.api.onOverlayClickThroughChange(setOverlayClickThrough);
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    window.api.getAppVersion().then((currentVersion) => setUpdaterState((s) => ({ ...s, currentVersion })));
+    const unsubscribe = window.api.onUpdaterEvent((event) => setUpdaterState((s) => reduceUpdaterEvent(s, event)));
     return unsubscribe;
   }, []);
 
@@ -182,6 +210,18 @@ export function App() {
 
   function disconnect() {
     window.api.disconnect();
+  }
+
+  function checkForUpdates() {
+    window.api.checkForUpdates();
+  }
+
+  function downloadUpdate() {
+    window.api.downloadUpdate();
+  }
+
+  function installUpdate() {
+    window.api.installUpdate();
   }
 
   async function copyLobbyCode() {
@@ -299,9 +339,59 @@ export function App() {
     }
   }
 
+  const updateAvailable = updaterState.status === 'available' || updaterState.status === 'downloaded';
+  const showUpdatePanel =
+    updaterState.status === 'available' ||
+    updaterState.status === 'downloading' ||
+    updaterState.status === 'downloaded' ||
+    updaterState.status === 'error';
+
   return (
     <div className="app">
-      <h1>SoulLink Overlay</h1>
+      <div className="app-header">
+        <h1>SoulLink Overlay</h1>
+        <div className="app-version-row">
+          {updaterState.currentVersion && <span className="app-version">v{updaterState.currentVersion}</span>}
+          {updateAvailable && <span className="update-dot" title="Update verfügbar" />}
+          <button
+            type="button"
+            className="update-check-link"
+            onClick={checkForUpdates}
+            disabled={updaterState.status === 'checking' || updaterState.status === 'downloading'}
+          >
+            {updaterState.status === 'checking' ? 'Suche…' : 'Nach Updates suchen'}
+          </button>
+        </div>
+      </div>
+
+      {showUpdatePanel && (
+        <div className={`update-alert update-alert-${updaterState.status}`} role="status">
+          <span className="update-alert-text">{updaterStatusText(updaterState)}</span>
+          {updaterState.status === 'downloading' && (
+            <div className="update-progress-track">
+              <div
+                className="update-progress-fill"
+                style={{ width: `${Math.round(updaterState.progress?.percent ?? 0)}%` }}
+              />
+            </div>
+          )}
+          {updaterState.status === 'available' && (
+            <button type="button" onClick={downloadUpdate}>
+              Herunterladen
+            </button>
+          )}
+          {updaterState.status === 'downloaded' && (
+            <button type="button" onClick={installUpdate}>
+              Neu starten &amp; installieren
+            </button>
+          )}
+          {updaterState.status === 'error' && (
+            <button type="button" onClick={checkForUpdates}>
+              Erneut versuchen
+            </button>
+          )}
+        </div>
+      )}
 
       {visibility.showStatusTag && (
         <div className={`connection-status-tag status-${connectionStatus}`}>

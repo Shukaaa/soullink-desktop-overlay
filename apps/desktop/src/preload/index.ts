@@ -6,6 +6,7 @@ import {
   type ConnectPayload,
   type OverlayResizePayload,
   type PublicSaveFile,
+  type UpdaterEvent,
   type WsEvent,
 } from '../common/ipc';
 import type { SaveFileMeta } from '../common/saveTypes';
@@ -50,6 +51,15 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, ignore: boolean) => callback(ignore);
     ipcRenderer.on(IpcChannel.OverlayClickThroughEvent, listener);
     return () => ipcRenderer.removeListener(IpcChannel.OverlayClickThroughEvent, listener);
+  },
+  getAppVersion: (): Promise<string> => ipcRenderer.invoke(IpcChannel.UpdaterGetVersion),
+  checkForUpdates: (): Promise<void> => ipcRenderer.invoke(IpcChannel.UpdaterCheck),
+  downloadUpdate: (): Promise<void> => ipcRenderer.invoke(IpcChannel.UpdaterDownload),
+  installUpdate: (): Promise<void> => ipcRenderer.invoke(IpcChannel.UpdaterInstall),
+  onUpdaterEvent: (callback: (event: UpdaterEvent) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: UpdaterEvent) => callback(payload);
+    ipcRenderer.on(IpcChannel.UpdaterEvent, listener);
+    return () => ipcRenderer.removeListener(IpcChannel.UpdaterEvent, listener);
   },
 };
 

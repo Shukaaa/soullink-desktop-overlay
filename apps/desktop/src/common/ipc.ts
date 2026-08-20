@@ -6,6 +6,7 @@
 import type { ClientMessage, OverlaySettings, ServerMessage } from '@soullink/shared';
 import type { ConnectionHistoryEntry } from './connectionHistoryTypes';
 import type { PublicSaveFile, SaveFile, SaveFileMeta } from './saveTypes';
+import type { UpdaterEvent } from './updaterTypes';
 
 export const IpcChannel = {
   Connect: 'connection:connect',
@@ -27,6 +28,11 @@ export const IpcChannel = {
   SettingsGetOverlay: 'settings:get-overlay',
   SettingsUpdateOverlay: 'settings:update-overlay',
   ClipboardWrite: 'clipboard:write',
+  UpdaterGetVersion: 'updater:get-version',
+  UpdaterCheck: 'updater:check',
+  UpdaterDownload: 'updater:download',
+  UpdaterInstall: 'updater:install',
+  UpdaterEvent: 'updater:event',
 } as const;
 
 export interface ConnectPayload {
@@ -59,3 +65,4 @@ export interface SaveUpdatePayload {
 export type { PublicSaveFile };
 
 export type { ClientMessage, ServerMessage, SaveFile, SaveFileMeta, OverlaySettings, ConnectionHistoryEntry };
+export type { UpdaterEvent };

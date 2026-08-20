@@ -2,6 +2,7 @@
 import type { ClientMessage, OverlaySettings } from '@soullink/shared';
 import type { ConnectionHistoryEntry, ConnectPayload, OverlayResizePayload, PublicSaveFile, WsEvent } from '../../../common/ipc';
 import type { SaveFileMeta } from '../../../common/saveTypes';
+import type { UpdaterEvent } from '../../../common/updaterTypes';
 
 export interface SoulLinkApi {
   connect(payload: ConnectPayload): Promise<void>;
@@ -25,6 +26,11 @@ export interface SoulLinkApi {
   updateOverlaySettings(partial: Partial<OverlaySettings>): Promise<OverlaySettings>;
   onEvent(callback: (event: WsEvent) => void): () => void;
   onOverlayClickThroughChange(callback: (ignore: boolean) => void): () => void;
+  getAppVersion(): Promise<string>;
+  checkForUpdates(): Promise<void>;
+  downloadUpdate(): Promise<void>;
+  installUpdate(): Promise<void>;
+  onUpdaterEvent(callback: (event: UpdaterEvent) => void): () => void;
 }
 
 declare global {

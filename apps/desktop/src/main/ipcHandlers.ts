@@ -14,6 +14,7 @@ import type { WsClient } from './wsClient';
 import type { SaveStateService } from './saveState/SaveStateService';
 import type { SaveFile, SaveFileMeta } from './saveState/schema';
 import type { ConnectionHistoryEntry } from './saveState/connectionHistory';
+import type { UpdaterController } from './updater';
 
 export interface SessionState {
   playerId: string | null;
@@ -36,6 +37,8 @@ export interface IpcContext {
   /** Merges `partial` onto the current overlay settings, applies it (window
    * position/broadcast), persists it, and returns the resulting settings. */
   setOverlaySettings: (partial: Partial<OverlaySettings>) => OverlaySettings;
+  getAppVersion: () => string;
+  updater: UpdaterController;
 }
 
 const MIN_OVERLAY_SIZE = 40;
@@ -161,6 +164,11 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   ipcMain.handle(IpcChannel.SettingsUpdateOverlay, (_event, partial: Partial<OverlaySettings>): OverlaySettings =>
     ctx.setOverlaySettings(partial)
   );
+
+  ipcMain.handle(IpcChannel.UpdaterGetVersion, (): string => ctx.getAppVersion());
+  ipcMain.handle(IpcChannel.UpdaterCheck, (): void => ctx.updater.checkForUpdates());
+  ipcMain.handle(IpcChannel.UpdaterDownload, (): void => ctx.updater.downloadUpdate());
+  ipcMain.handle(IpcChannel.UpdaterInstall, (): void => ctx.updater.quitAndInstall());
 }
 
 function clamp(value: number, min: number, max: number): number {

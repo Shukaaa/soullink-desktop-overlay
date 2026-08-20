@@ -8,8 +8,11 @@ import { SaveStateService } from './saveState/SaveStateService';
 import { registerIpcHandlers, type SessionState } from './ipcHandlers';
 import { decideOpenMessage, deriveSaveLobbyFields } from './restore';
 import { IpcChannel, type WsEvent } from '../common/ipc';
+import type { UpdaterEvent } from '../common/updaterTypes';
+import { initUpdater } from './updater';
 
 const CLICK_THROUGH_SHORTCUT = 'CommandOrControl+Shift+O';
+const UPDATE_CHECK_STARTUP_DELAY_MS = 5000;
 
 const preloadPath = join(__dirname, '../preload/index.js');
 
@@ -39,6 +42,16 @@ function broadcast(event: WsEvent): void {
     }
   }
 }
+
+function broadcastUpdaterEvent(event: UpdaterEvent): void {
+  for (const win of [controlWindow, overlayWindow]) {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(IpcChannel.UpdaterEvent, event);
+    }
+  }
+}
+
+const updaterController = initUpdater(broadcastUpdaterEvent);
 
 function setOverlayClickThrough(ignore: boolean): void {
   overlayClickThrough = ignore;
@@ -252,6 +265,8 @@ app.whenReady().then(() => {
     },
     getOverlaySettings: () => overlaySettings,
     setOverlaySettings,
+    getAppVersion: () => app.getVersion(),
+    updater: updaterController,
   });
   createWindows();
   createTray();
@@ -259,6 +274,11 @@ app.whenReady().then(() => {
   globalShortcut.register(CLICK_THROUGH_SHORTCUT, () => {
     setOverlayClickThrough(!overlayClickThrough);
   });
+
+  // Silent background check shortly after launch, in addition to the
+  // manual "Nach Updates suchen" action in the control UI -- gives the
+  // yellow update indicator a chance to appear without user interaction.
+  setTimeout(() => updaterController.checkForUpdates(), UPDATE_CHECK_STARTUP_DELAY_MS);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindows();

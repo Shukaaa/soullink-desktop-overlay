@@ -2,8 +2,10 @@ name: Release Desktop
 
 # Builds ONLY the Windows Electron desktop app (apps/desktop, plus its
 # packages/shared workspace dependency) and publishes the resulting NSIS
-# installer + portable EXE as a GitHub Release. apps/server is never built
-# or packaged here and is never part of the released artifacts.
+# installer + portable EXE as a GitHub Release, together with the latest.yml
+# / *.blockmap metadata electron-updater needs to detect and download
+# updates. apps/server is never built or packaged here and is never part of
+# the released artifacts.
 on:
   push:
     branches: [master]
@@ -32,6 +34,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Compute unique app version
+        id: version
+        shell: pwsh
+        run: |
+          # electron-updater compares the semantic version embedded in the
+          # packaged app / latest.yml against the installed one, so every
+          # master push needs a version that is both valid semver and
+          # strictly higher than the previous release. Keep major.minor from
+          # apps/desktop/package.json but replace patch with this run's build
+          # number, which only ever increases.
+          $basePackage = Get-Content apps/desktop/package.json -Raw | ConvertFrom-Json
+          $baseVersion = [version]$basePackage.version
+          $version = "$($baseVersion.Major).$($baseVersion.Minor).${{ github.run_number }}"
+          $shortSha = "${{ github.sha }}".Substring(0, 7)
+          $tag = "v$version"
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "short_sha=$shortSha" >> $env:GITHUB_OUTPUT
+          echo "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Set apps/desktop package version
+        shell: pwsh
+        run: npm version ${{ steps.version.outputs.version }} --no-git-tag-version -w apps/desktop
+
       - name: Build packages/shared
         run: npm run build -w packages/shared
 
@@ -53,20 +78,9 @@ jobs:
       - name: Package Windows installer + portable EXE (electron-builder)
         run: npm run package -w apps/desktop
 
-      - name: Compute release version and tag
-        id: version
-        shell: pwsh
-        run: |
-          $version = node -p "require('./apps/desktop/package.json').version"
-          $shortSha = "${{ github.sha }}".Substring(0, 7)
-          $tag = "v$version-build.${{ github.run_number }}"
-          echo "version=$version" >> $env:GITHUB_OUTPUT
-          echo "short_sha=$shortSha" >> $env:GITHUB_OUTPUT
-          echo "tag=$tag" >> $env:GITHUB_OUTPUT
-
       - name: List packaged artifacts
         shell: pwsh
-        run: Get-ChildItem "apps/desktop/release" -Filter "*.exe" | Format-Table Name, Length
+        run: Get-ChildItem "apps/desktop/release" -Include "*.exe", "*.yml", "*.blockmap" -Recurse | Format-Table Name, Length
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -78,3 +92,5 @@ jobs:
           prerelease: false
           files: |
             apps/desktop/release/*.exe
+            apps/desktop/release/*.yml
+            apps/desktop/release/*.blockmap
