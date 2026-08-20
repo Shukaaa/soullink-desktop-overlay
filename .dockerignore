@@ -1,0 +1,24 @@
+.git
+.github
+.idea
+node_modules
+**/node_modules
+# The Dockerfile needs the desktop workspace manifest for `npm ci`, but the
+# desktop source and build output are not copied into the server image.
+apps/desktop/src
+apps/desktop/assets
+apps/desktop/out
+apps/desktop/release
+apps/desktop/.vite
+**/out
+**/dist
+**/release
+**/*.test.ts
+**/*.test.tsx
+*.log
+.env
+.env.*
+apps/server/data
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

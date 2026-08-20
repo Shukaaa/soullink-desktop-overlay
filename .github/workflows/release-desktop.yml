@@ -6,7 +6,7 @@ name: Release Desktop
 # or packaged here and is never part of the released artifacts.
 on:
   push:
-    branches: [main]
+    branches: [master]
   workflow_dispatch: {}
 
 permissions:

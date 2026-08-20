@@ -30,6 +30,10 @@ const api = {
   restoreSave: (id: string): Promise<PublicSaveFile> => ipcRenderer.invoke(IpcChannel.SaveRestore, id),
   listConnectionHistory: (): Promise<ConnectionHistoryEntry[]> =>
     ipcRenderer.invoke(IpcChannel.ConnectionHistoryList),
+  deleteConnectionHistoryEntry: (
+    entry: Pick<ConnectionHistoryEntry, 'serverUrl' | 'playerName'>
+  ): Promise<ConnectionHistoryEntry[]> => ipcRenderer.invoke(IpcChannel.ConnectionHistoryDelete, entry),
+  copyToClipboard: (text: string): Promise<void> => ipcRenderer.invoke(IpcChannel.ClipboardWrite, text),
   resizeOverlay: (payload: OverlayResizePayload): Promise<void> =>
     ipcRenderer.invoke(IpcChannel.OverlayResize, payload),
   setOverlayIgnoreMouse: (ignore: boolean): Promise<void> =>

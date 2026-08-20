@@ -23,10 +23,10 @@ export function PokemonPicker({ onSelect, selectedId }: PokemonPickerProps) {
     <div className="pokemon-picker">
       <input
         type="text"
-        placeholder="Search Pokemon (English or German)..."
+        placeholder="Pokémon suchen (Deutsch oder Englisch) …"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        aria-label="Search Pokemon"
+        aria-label="Pokémon suchen"
       />
       <div className="pokemon-picker-results">
         {results.map((entry) => (

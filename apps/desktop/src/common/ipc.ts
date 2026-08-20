@@ -20,11 +20,13 @@ export const IpcChannel = {
   SaveLoadAutosave: 'save:load-autosave',
   SaveRestore: 'save:restore',
   ConnectionHistoryList: 'connection:history-list',
+  ConnectionHistoryDelete: 'connection:history-delete',
   OverlayResize: 'overlay:resize',
   OverlaySetIgnoreMouse: 'overlay:set-ignore-mouse',
   OverlayClickThroughEvent: 'overlay:click-through-event',
   SettingsGetOverlay: 'settings:get-overlay',
   SettingsUpdateOverlay: 'settings:update-overlay',
+  ClipboardWrite: 'clipboard:write',
 } as const;
 
 export interface ConnectPayload {

@@ -5,6 +5,7 @@ import { emptySaveFile, saveFileSchema, toSaveFileMeta, type SaveFile, type Save
 import {
   connectionHistoryFileSchema,
   mergeConnectionHistoryEntry,
+  removeConnectionHistoryEntry,
   type ConnectionHistoryEntry,
 } from './connectionHistory';
 
@@ -229,6 +230,12 @@ export class SaveStateService {
     const current = this.listConnectionHistory();
     if (!serverUrl || !playerName) return current;
     const next = mergeConnectionHistoryEntry(current, { serverUrl, playerName, lastConnectedAt: Date.now() });
+    this.writeHistoryAtomic(next);
+    return next;
+  }
+
+  removeConnectionHistoryEntry(entry: Pick<ConnectionHistoryEntry, 'serverUrl' | 'playerName'>): ConnectionHistoryEntry[] {
+    const next = removeConnectionHistoryEntry(this.listConnectionHistory(), entry);
     this.writeHistoryAtomic(next);
     return next;
   }

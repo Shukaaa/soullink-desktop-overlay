@@ -50,3 +50,17 @@ export function mergeConnectionHistoryEntry(
   );
   return [entry, ...withoutDuplicate].slice(0, maxEntries);
 }
+
+/** Removes the matching URL + player-name combination from connection history. */
+export function removeConnectionHistoryEntry(
+  existing: ConnectionHistoryEntry[],
+  entry: Pick<ConnectionHistoryEntry, 'serverUrl' | 'playerName'>
+): ConnectionHistoryEntry[] {
+  return existing.filter(
+    (candidate) =>
+      !(
+        serverUrlsMatch(candidate.serverUrl, entry.serverUrl) &&
+        normalizePlayerNameForCompare(candidate.playerName) === normalizePlayerNameForCompare(entry.playerName)
+      )
+  );
+}

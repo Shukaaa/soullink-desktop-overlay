@@ -1,8 +1,8 @@
-import { app, BrowserWindow, globalShortcut } from 'electron';
+import { app, BrowserWindow, globalShortcut, Menu, Tray, type MenuItemConstructorOptions } from 'electron';
 import { join } from 'node:path';
 import type { LobbyState, OverlaySettings, RestoreLobbyStateMessage, ServerMessage } from '@soullink/shared';
 import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@soullink/shared';
-import { createControlWindow, createOverlayWindow, repositionOverlay } from './windows';
+import { APP_ICON_PATH, createControlWindow, createOverlayWindow, repositionOverlay } from './windows';
 import { WsClient } from './wsClient';
 import { SaveStateService } from './saveState/SaveStateService';
 import { registerIpcHandlers, type SessionState } from './ipcHandlers';
@@ -19,6 +19,8 @@ let lastLobbyState: LobbyState | null = null;
 let overlayClickThrough = true;
 let pendingRestore: RestoreLobbyStateMessage | null = null;
 let overlaySettings: OverlaySettings = DEFAULT_OVERLAY_SETTINGS;
+let tray: Tray | null = null;
+let isQuitting = false;
 
 const wsClient = new WsClient();
 const saveStateService = new SaveStateService(app.getPath('userData'));
@@ -73,6 +75,10 @@ function setOverlaySettings(partial: Partial<OverlaySettings>): OverlaySettings 
 }
 
 function wireWsClient(): void {
+  wsClient.on('connecting', () => {
+    broadcast({ kind: 'connecting' });
+  });
+
   wsClient.on('open', () => {
     broadcast({ kind: 'open' });
     // Explicit pending restores (manual save "Load") always win; otherwise a
@@ -139,16 +145,95 @@ function wireWsClient(): void {
   });
 }
 
-function createWindows(): void {
-  controlWindow = createControlWindow(preloadPath);
-  overlayWindow = createOverlayWindow(preloadPath, overlaySettings.position);
-  overlayWindow.setIgnoreMouseEvents(overlayClickThrough, { forward: true });
+function attachControlWindow(win: BrowserWindow): void {
+  controlWindow = win;
   controlWindow.on('closed', () => {
     controlWindow = null;
+    updateTrayMenu();
   });
+}
+
+function attachOverlayWindow(win: BrowserWindow): void {
+  overlayWindow = win;
+  overlayWindow.setIgnoreMouseEvents(overlayClickThrough, { forward: true });
   overlayWindow.on('closed', () => {
     overlayWindow = null;
+    updateTrayMenu();
   });
+}
+
+function createControlWindowInstance(): void {
+  if (!controlWindow || controlWindow.isDestroyed()) {
+    attachControlWindow(createControlWindow(preloadPath));
+  } else {
+    controlWindow.show();
+    controlWindow.focus();
+  }
+}
+
+function createOverlayWindowInstance(): void {
+  if (!overlayWindow || overlayWindow.isDestroyed()) {
+    attachOverlayWindow(createOverlayWindow(preloadPath, overlaySettings.position));
+  } else {
+    overlayWindow.show();
+  }
+}
+
+function toggleControlWindow(): void {
+  if (controlWindow && !controlWindow.isDestroyed()) {
+    if (controlWindow.isVisible()) controlWindow.hide();
+    else createControlWindowInstance();
+  } else {
+    createControlWindowInstance();
+  }
+  updateTrayMenu();
+}
+
+function toggleOverlayWindow(): void {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    if (overlayWindow.isVisible()) overlayWindow.hide();
+    else createOverlayWindowInstance();
+  } else {
+    createOverlayWindowInstance();
+  }
+  updateTrayMenu();
+}
+
+function quitApplication(): void {
+  isQuitting = true;
+  app.quit();
+}
+
+function buildTrayMenu(): Electron.Menu {
+  const template: MenuItemConstructorOptions[] = [
+    {
+      label: controlWindow?.isVisible() ? 'Steuerungsfenster ausblenden' : 'Steuerungsfenster anzeigen',
+      click: toggleControlWindow,
+    },
+    {
+      label: overlayWindow?.isVisible() ? 'Overlay ausblenden' : 'Overlay anzeigen',
+      click: toggleOverlayWindow,
+    },
+    { type: 'separator' },
+    { label: 'Alles beenden', click: quitApplication },
+  ];
+  return Menu.buildFromTemplate(template);
+}
+
+function updateTrayMenu(): void {
+  tray?.setContextMenu(buildTrayMenu());
+}
+
+function createTray(): void {
+  tray = new Tray(APP_ICON_PATH);
+  tray.setToolTip('SoulLink Overlay');
+  tray.on('double-click', createControlWindowInstance);
+  updateTrayMenu();
+}
+
+function createWindows(): void {
+  createControlWindowInstance();
+  createOverlayWindowInstance();
 }
 
 app.whenReady().then(() => {
@@ -169,6 +254,7 @@ app.whenReady().then(() => {
     setOverlaySettings,
   });
   createWindows();
+  createTray();
 
   globalShortcut.register(CLICK_THROUGH_SHORTCUT, () => {
     setOverlayClickThrough(!overlayClickThrough);
@@ -184,8 +270,13 @@ app.on('will-quit', () => {
 });
 
 app.on('window-all-closed', () => {
-  saveStateService.dispose();
-  wsClient.dispose();
-  if (process.platform !== 'darwin') app.quit();
+  if (isQuitting && process.platform !== 'darwin') app.quit();
 });
 
+app.on('before-quit', () => {
+  isQuitting = true;
+  saveStateService.dispose();
+  wsClient.dispose();
+  tray?.destroy();
+  tray = null;
+});

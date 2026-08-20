@@ -8,6 +8,7 @@ const isDev = !!process.env['ELECTRON_RENDERER_URL'];
 const OVERLAY_MARGIN = 24;
 const OVERLAY_INITIAL_WIDTH = 360;
 const OVERLAY_INITIAL_HEIGHT = 120;
+export const APP_ICON_PATH = join(__dirname, '../../assets/icon.ico');
 
 function loadPage(win: BrowserWindow, page: 'index' | 'overlay'): void {
   if (isDev) {
@@ -24,6 +25,7 @@ export function createControlWindow(preloadPath: string): BrowserWindow {
     minWidth: 360,
     minHeight: 480,
     title: 'SoulLink Overlay - Control Panel',
+    icon: APP_ICON_PATH,
     autoHideMenuBar: true,
     webPreferences: {
       preload: preloadPath,
@@ -55,7 +57,7 @@ export function createOverlayWindow(preloadPath: string, position: OverlayPositi
     hasShadow: false,
     alwaysOnTop: true,
     resizable: false,
-    skipTaskbar: true,
+    skipTaskbar: false,
     focusable: false,
     webPreferences: {
       preload: preloadPath,

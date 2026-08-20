@@ -17,6 +17,7 @@ import {
 } from '@soullink/shared';
 import { NullLobbyRepository } from './db/lobbyRepository';
 import type { LobbyRepository, PersistedLobby, PersistedPlayer } from './db/lobbyRepository';
+import { logger } from './logger';
 
 const LOBBY_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
 
@@ -113,9 +114,12 @@ export class LobbyManager {
    */
   loadFromRepository(): void {
     const now = Date.now();
-    for (const persisted of this.repository.loadAll()) {
+    const persistedLobbies = this.repository.loadAll();
+    logger.info('Loading persisted lobbies', { count: persistedLobbies.length });
+    for (const persisted of persistedLobbies) {
       this.hydrateLobby(persisted, now);
     }
+    logger.info('Finished loading persisted lobbies', { activeLobbyCount: this.lobbies.size });
   }
 
   /** Test/shutdown helper: clears all pending timers so the process can exit cleanly. */
@@ -157,6 +161,12 @@ export class LobbyManager {
     this.lobbies.set(lobbyId, lobby);
     this.connections.set(ws, { lobbyId, playerId });
     this.persist(lobby);
+    logger.info('Lobby created', {
+      lobbyId,
+      playerId,
+      playerName: player.name,
+      playerCount: lobby.players.size,
+    });
     return { lobbyId, playerId, token, state: this.toState(lobby) };
   }
 
@@ -196,6 +206,12 @@ export class LobbyManager {
     // its own STATE (with self identity) via the caller's response.
     this.broadcast(lobby, ws);
     this.persist(lobby);
+    logger.info('Player joined lobby', {
+      lobbyId,
+      playerId,
+      playerName: player.name,
+      playerCount: lobby.players.size,
+    });
     return { lobbyId, playerId, token, state: this.toState(lobby) };
   }
 
@@ -241,6 +257,7 @@ export class LobbyManager {
     player.slots[slotIndex] = { pokemonId };
     this.persist(lobby);
     this.broadcastState(lobby);
+    logger.info('Pokemon slot updated', { lobbyId: lobby.id, playerId: player.id, slotIndex, pokemonId });
   }
 
   removePokemon(ws: WebSocket, slotIndex: number): void {
@@ -249,6 +266,7 @@ export class LobbyManager {
     player.slots[slotIndex] = { pokemonId: null };
     this.persist(lobby);
     this.broadcastState(lobby);
+    logger.info('Pokemon slot cleared', { lobbyId: lobby.id, playerId: player.id, slotIndex });
   }
 
   kickPlayer(ws: WebSocket, targetPlayerId: string): void {
@@ -270,6 +288,12 @@ export class LobbyManager {
       target.ws.close();
     }
     this.removePlayerPermanently(lobby, targetPlayerId);
+    logger.info('Player kicked from lobby', {
+      lobbyId: lobby.id,
+      playerId: player.id,
+      targetPlayerId,
+      playerCount: lobby.players.size,
+    });
   }
 
   leaveLobby(ws: WebSocket): void {
@@ -284,6 +308,11 @@ export class LobbyManager {
     const lobby = this.lobbies.get(meta.lobbyId);
     if (!lobby) return;
     this.removePlayerPermanently(lobby, meta.playerId);
+    logger.info('Player left lobby', {
+      lobbyId: meta.lobbyId,
+      playerId: meta.playerId,
+      playerCount: lobby.players.size,
+    });
   }
 
   handleDisconnect(ws: WebSocket): void {
@@ -300,6 +329,11 @@ export class LobbyManager {
     this.armDisconnectTimer(lobby, player, RECONNECT_GRACE_MS);
     this.persist(lobby);
     this.broadcastState(lobby);
+    logger.info('Player disconnected; reconnect grace started', {
+      lobbyId: lobby.id,
+      playerId: player.id,
+      graceMs: RECONNECT_GRACE_MS,
+    });
   }
 
   // -- internal helpers -----------------------------------------------------
@@ -315,6 +349,7 @@ export class LobbyManager {
     this.connections.set(ws, { lobbyId: lobby.id, playerId: player.id });
     this.broadcast(lobby, ws);
     this.persist(lobby);
+    logger.info('Player reconnected', { lobbyId: lobby.id, playerId: player.id, playerName: player.name });
     return { lobbyId: lobby.id, playerId: player.id, token: player.token, state: this.toState(lobby) };
   }
 
@@ -331,6 +366,11 @@ export class LobbyManager {
     this.connections.set(ws, { lobbyId: lobby.id, playerId: player.id });
     this.broadcast(lobby, ws);
     this.persist(lobby);
+    logger.info('Restored player reclaimed placeholder', {
+      lobbyId: lobby.id,
+      playerId: player.id,
+      playerName: player.name,
+    });
     return { lobbyId: lobby.id, playerId: player.id, token: player.token, state: this.toState(lobby) };
   }
 
@@ -384,6 +424,13 @@ export class LobbyManager {
     const selfRecord = players.get(msg.playerId)!;
     this.connections.set(ws, { lobbyId, playerId: msg.playerId });
     this.persist(lobby);
+    logger.info('Lobby restored from snapshot', {
+      lobbyId,
+      requestedLobbyId: msg.lobbyId,
+      playerId: msg.playerId,
+      playerCount: lobby.players.size,
+      forcedNewLobbyId: forceNewId,
+    });
     return { lobbyId, playerId: msg.playerId, token: selfRecord.token, state: this.toState(lobby) };
   }
 
@@ -392,6 +439,12 @@ export class LobbyManager {
     if (!player) return;
     if (player.disconnectTimer) clearTimeout(player.disconnectTimer);
     lobby.players.delete(playerId);
+    logger.info('Player removed permanently', {
+      lobbyId: lobby.id,
+      playerId,
+      wasHost: player.isHost,
+      remainingPlayers: lobby.players.size,
+    });
 
     if (player.isHost) {
       const nextHost = [...lobby.players.values()]
@@ -400,6 +453,7 @@ export class LobbyManager {
       if (nextHost) {
         nextHost.isHost = true;
         lobby.hostId = nextHost.id;
+        logger.info('Lobby host transferred', { lobbyId: lobby.id, newHostId: nextHost.id });
       }
     }
 
@@ -409,6 +463,7 @@ export class LobbyManager {
       // waiting for scheduleEmptyLobbyCleanup's in-memory-map TTL.
       this.repository.deleteLobby(lobby.id);
       this.scheduleEmptyLobbyCleanup(lobby);
+      logger.info('Lobby became empty and was deleted from persistence', { lobbyId: lobby.id });
     } else {
       this.persist(lobby);
       this.broadcastState(lobby);
@@ -421,6 +476,7 @@ export class LobbyManager {
       const current = this.lobbies.get(lobby.id);
       if (current && current.players.size === 0) {
         this.lobbies.delete(lobby.id);
+        logger.info('Empty lobby removed from memory', { lobbyId: lobby.id });
       }
     }, EMPTY_LOBBY_TTL_MS);
     lobby.emptyTimer.unref?.();

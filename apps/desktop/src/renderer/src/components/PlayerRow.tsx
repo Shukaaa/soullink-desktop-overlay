@@ -18,12 +18,12 @@ export function PlayerRow({ player, isSelf, isHost, editingSlotIndex, onSlotClic
         <span className="player-name">
           {player.isHost ? '👑 ' : ''}
           {player.name}
-          {isSelf ? ' (you)' : ''}
-          {!player.connected ? ' - reconnecting…' : ''}
+          {isSelf ? ' (du)' : ''}
+          {!player.connected ? ' (wird neu verbunden …)' : ''}
         </span>
         {isHost && !isSelf && (
           <button type="button" onClick={() => onKick(player.id)}>
-            Kick
+            Entfernen
           </button>
         )}
       </div>

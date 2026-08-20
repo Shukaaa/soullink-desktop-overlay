@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { mergeConnectionHistoryEntry, type ConnectionHistoryEntry } from './connectionHistory';
+import {
+  mergeConnectionHistoryEntry,
+  removeConnectionHistoryEntry,
+  type ConnectionHistoryEntry,
+} from './connectionHistory';
 
 function entry(overrides: Partial<ConnectionHistoryEntry> = {}): ConnectionHistoryEntry {
   return {
@@ -14,6 +18,23 @@ describe('mergeConnectionHistoryEntry', () => {
   it('adds a brand new entry to the front of an empty list', () => {
     const result = mergeConnectionHistoryEntry([], entry());
     expect(result).toEqual([entry()]);
+  });
+
+  describe('removeConnectionHistoryEntry', () => {
+    it('removes only the matching URL and player name', () => {
+      const removed = entry();
+      const retained = entry({ playerName: 'Misty' });
+
+      expect(removeConnectionHistoryEntry([removed, retained], removed)).toEqual([retained]);
+    });
+
+    it('uses the same URL and player-name normalization as de-duplication', () => {
+      const existing = entry({ serverUrl: 'WS://LOCALHOST:8787/', playerName: '  ash  ' });
+
+      expect(
+        removeConnectionHistoryEntry([existing], { serverUrl: 'ws://localhost:8787', playerName: 'ASH' })
+      ).toEqual([]);
+    });
   });
 
   it('puts the newest entry first, ahead of unrelated existing entries', () => {

@@ -100,6 +100,25 @@ button:disabled {
   align-items: center;
 }
 
+.lobby-code-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.lobby-code-label {
+  color: #9aa0ac;
+  font-size: 12px;
+}
+
+.lobby-code-row code {
+  flex: 1;
+  color: #eaeaf0;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+}
+
 .status-line,
 .hint-line {
   font-size: 12px;
@@ -109,6 +128,37 @@ button:disabled {
 .error-line {
   font-size: 12px;
   color: #ff6b6b;
+}
+
+.success-alert {
+  position: fixed;
+  z-index: 10;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  padding: 9px 13px;
+  border: 1px solid #5ccf91;
+  border-radius: 999px;
+  background: #173528;
+  box-shadow: 0 6px 22px rgb(0 0 0 / 35%);
+  color: #d9ffe9;
+  font-size: 12px;
+  animation: success-alert-in 160ms ease-out;
+}
+
+@keyframes success-alert-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 
 .connection-status-tag {
@@ -360,6 +410,16 @@ button:disabled {
   border: 1px solid #33384a;
   border-radius: 6px;
   padding: 6px 8px;
+}
+
+.history-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.history-delete-button {
+  color: #ff9a9a;
 }
 
 .history-info {

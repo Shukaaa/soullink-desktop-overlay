@@ -24,19 +24,42 @@ function connectionStatusLabel(
       return 'Verbinde…';
     case 'reconnecting':
       return reconnectInfo
-        ? `Verbindung unterbrochen – Versuch #${reconnectInfo.attempt} in ${Math.round(reconnectInfo.delayMs / 1000)}s`
-        : 'Verbindung unterbrochen – erneuter Versuch…';
+        ? `Verbindung unterbrochen. Versuch ${reconnectInfo.attempt} in ${Math.round(reconnectInfo.delayMs / 1000)} Sekunden`
+        : 'Verbindung unterbrochen. Neuer Versuch läuft…';
     case 'closed':
       return 'Getrennt';
     default:
-      return status;
+      return 'Verbindungsstatus';
   }
+}
+
+function translateErrorMessage(message: string): string {
+  const translations: Array<[string, string]> = [
+    ['This lobby is full.', 'Diese Lobby ist voll.'],
+    ['That name is already taken in this lobby.', 'Dieser Name wird in dieser Lobby bereits verwendet.'],
+    ['Reconnect token is invalid.', 'Das Reconnect-Token ist ungültig.'],
+    ['Player no longer exists in this lobby.', 'Der Spieler existiert nicht mehr in dieser Lobby.'],
+    ['Unknown species id.', 'Unbekannte Pokémonkennung.'],
+    ['You cannot kick yourself.', 'Du kannst dich nicht selbst entfernen.'],
+    ['Player not found in this lobby.', 'Der Spieler wurde in dieser Lobby nicht gefunden.'],
+    ['You must join a lobby first.', 'Du musst zuerst einer Lobby beitreten.'],
+    ['Only the lobby host can do that.', 'Nur der Host darf diese Aktion ausführen.'],
+    ['This save has no server URL to reconnect to.', 'Dieser Speicherstand enthält keine Serveradresse.'],
+    ['This save has no lobby to restore.', 'Dieser Speicherstand enthält keine Lobby zum Wiederherstellen.'],
+  ];
+  const translation = translations.find(([english]) => message === english);
+  if (translation) return translation[1];
+  if (message.startsWith('Lobby "') && message.endsWith('" was not found.')) {
+    return message.replace(/^Lobby "(.+)" was not found\.$/, 'Die Lobby "$1" wurde nicht gefunden.');
+  }
+  if (message.startsWith('WebSocket')) return 'Die Verbindung zum Server ist fehlgeschlagen.';
+  return message;
 }
 
 export function App() {
   useWsBridge();
 
-  const { connectionStatus, error, lobby, selfPlayerId, reconnectInfo } = useAppStore();
+  const { connectionStatus, error, lobby, selfPlayerId, reconnectInfo, setConnecting } = useAppStore();
 
   const [serverUrl, setServerUrl] = useState('ws://localhost:8787');
   const [playerName, setPlayerName] = useState('');
@@ -45,11 +68,13 @@ export function App() {
   const [overlayClickThrough, setOverlayClickThrough] = useState(true);
   const [overlaySettings, setOverlaySettingsState] = useState<OverlaySettings>(DEFAULT_OVERLAY_SETTINGS);
   const [saves, setSaves] = useState<SaveFileMeta[]>([]);
-  const [savedHint, setSavedHint] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveName, setSaveName] = useState('');
   const [selectedSaveId, setSelectedSaveId] = useState('');
   const [history, setHistory] = useState<ConnectionHistoryEntry[]>([]);
+  const [lobbyCodeCopied, setLobbyCodeCopied] = useState(false);
+  const [successAlert, setSuccessAlert] = useState<string | null>(null);
+  const successAlertTimerRef = useRef<number | null>(null);
   const [openSection, setOpenSection] = useState<AccordionSection>('lobby');
 
   useEffect(() => {
@@ -66,6 +91,13 @@ export function App() {
     const unsubscribe = window.api.onOverlayClickThroughChange(setOverlayClickThrough);
     return unsubscribe;
   }, []);
+
+  useEffect(
+    () => () => {
+      if (successAlertTimerRef.current) window.clearTimeout(successAlertTimerRef.current);
+    },
+    []
+  );
 
   // Whenever we're no longer in a lobby (left voluntarily, kicked, or never
   // joined one) make sure no stale slot-editing/picker state lingers around.
@@ -90,6 +122,11 @@ export function App() {
         current,
       })
     );
+    if (!prevHasLobbyRef.current && lobby) {
+      showSuccessAlert(`Lobby ${lobby.id} ist bereit.`);
+    } else if (prevHasLobbyRef.current && !lobby) {
+      showSuccessAlert('Lobby verlassen.');
+    }
     prevConnectedRef.current = connected;
     prevHasLobbyRef.current = !!lobby;
   }, [connectionStatus, lobby]);
@@ -100,6 +137,15 @@ export function App() {
 
   function refreshHistory(): void {
     window.api.listConnectionHistory().then(setHistory);
+  }
+
+  function showSuccessAlert(message: string): void {
+    if (successAlertTimerRef.current) window.clearTimeout(successAlertTimerRef.current);
+    setSuccessAlert(message);
+    successAlertTimerRef.current = window.setTimeout(() => {
+      setSuccessAlert(null);
+      successAlertTimerRef.current = null;
+    }, 2600);
   }
 
   const isHost = !!lobby && !!selfPlayerId && lobby.hostId === selfPlayerId;
@@ -118,6 +164,10 @@ export function App() {
   }, [filteredSaves, selectedSaveId]);
 
   function connect() {
+    // Flip to 'connecting' immediately rather than waiting for the IPC round
+    // trip + main-process broadcast, so the status tag and Disconnect/Cancel
+    // action appear the instant the user clicks Connect.
+    setConnecting();
     window.api.connect({ serverUrl, playerName }).then(refreshHistory);
   }
 
@@ -126,11 +176,25 @@ export function App() {
   function connectFromHistory(entry: ConnectionHistoryEntry) {
     setServerUrl(entry.serverUrl);
     setPlayerName(entry.playerName);
+    setConnecting();
     window.api.connect({ serverUrl: entry.serverUrl, playerName: entry.playerName }).then(refreshHistory);
   }
 
   function disconnect() {
     window.api.disconnect();
+  }
+
+  async function copyLobbyCode() {
+    if (!lobby) return;
+    await window.api.copyToClipboard(lobby.id);
+    setLobbyCodeCopied(true);
+    showSuccessAlert('Lobbycode wurde kopiert.');
+    window.setTimeout(() => setLobbyCodeCopied(false), 1500);
+  }
+
+  async function deleteHistoryEntry(entry: ConnectionHistoryEntry) {
+    setHistory(await window.api.deleteConnectionHistoryEntry(entry));
+    showSuccessAlert('Verbindung aus der Historie entfernt.');
   }
 
   function createLobby() {
@@ -193,15 +257,15 @@ export function App() {
     try {
       if (selectedSaveId) {
         await window.api.updateSave(selectedSaveId, name);
-        setSavedHint(`Updated "${name}"`);
+        showSuccessAlert(`Speicherstand "${name}" aktualisiert.`);
       } else {
         const created = await window.api.createSave(name);
         setSelectedSaveId(created.id);
-        setSavedHint(`Saved "${name}"`);
+        showSuccessAlert(`Speicherstand "${name}" gespeichert.`);
       }
       refreshSaves();
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to save.');
+      setSaveError(err instanceof Error ? err.message : 'Speichern fehlgeschlagen.');
     }
   }
 
@@ -213,22 +277,25 @@ export function App() {
       if (save.serverUrl) setServerUrl(save.serverUrl);
       if (save.playerName) setPlayerName(save.playerName);
       setOverlaySettingsState(save.overlaySettings);
+      showSuccessAlert(`Speicherstand "${save.name}" geladen.`);
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to load save.');
+      setSaveError(err instanceof Error ? err.message : 'Laden fehlgeschlagen.');
     }
   }
 
   async function handleDeleteSave(id: string) {
     setSaveError(null);
     try {
+      const deletedSave = saves.find((save) => save.id === id);
       await window.api.deleteSave(id);
       if (selectedSaveId === id) {
         setSelectedSaveId('');
         setSaveName('');
       }
       refreshSaves();
+      showSuccessAlert(`Speicherstand "${deletedSave?.name ?? 'unbekannt'}" gelöscht.`);
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to delete save.');
+      setSaveError(err instanceof Error ? err.message : 'Löschen fehlgeschlagen.');
     }
   }
 
@@ -244,26 +311,26 @@ export function App() {
               : connectionStatusLabel(connectionStatus, reconnectInfo)}
           </span>
           <button type="button" className="disconnect-link" onClick={disconnect}>
-            Disconnect
+            {connectionStatus === 'connecting' || connectionStatus === 'reconnecting' ? 'Abbrechen' : 'Trennen'}
           </button>
         </div>
       )}
-      {error && <p className="error-line">{error}</p>}
+      {error && <p className="error-line">{translateErrorMessage(error)}</p>}
 
       {visibility.showConnectionForm && (
         <section className="panel">
-          <h2>Connection</h2>
+          <h2>Verbindung</h2>
           <label>
-            Server URL
+            Serveradresse
             <input value={serverUrl} onChange={(e) => setServerUrl(e.target.value)} />
           </label>
           <label>
-            Your name
+            Dein Name
             <input value={playerName} onChange={(e) => setPlayerName(e.target.value)} />
           </label>
           <div className="button-row">
             <button type="button" onClick={connect} disabled={!playerName.trim() || !serverUrl.trim()}>
-              Connect
+              Verbinden
             </button>
           </div>
         </section>
@@ -271,7 +338,7 @@ export function App() {
 
       {visibility.showConnectionForm && history.length > 0 && (
         <section className="panel history-panel">
-          <h2>Recent Connections</h2>
+          <h2>Letzte Verbindungen</h2>
           <ul className="history-list">
             {history.map((entry) => (
               <li key={`${entry.serverUrl}|${entry.playerName}`} className="history-row">
@@ -279,9 +346,20 @@ export function App() {
                   <span className="history-name">{entry.playerName}</span>
                   <span className="history-url">{entry.serverUrl}</span>
                 </div>
-                <button type="button" onClick={() => connectFromHistory(entry)}>
-                  Connect
-                </button>
+                <div className="history-actions">
+                  <button type="button" onClick={() => connectFromHistory(entry)}>
+                    Verbinden
+                  </button>
+                  <button
+                    type="button"
+                    className="history-delete-button"
+                    onClick={() => deleteHistoryEntry(entry)}
+                    aria-label={`Verbindung von ${entry.playerName} entfernen`}
+                    title="Entfernen"
+                  >
+                    Entfernen
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -299,17 +377,17 @@ export function App() {
             <>
               <div className="button-row">
                 <button type="button" onClick={createLobby}>
-                  Create Lobby
+                  Lobby erstellen
                 </button>
               </div>
               <div className="button-row">
                 <input
-                  placeholder="Lobby code"
+                  placeholder="Lobbycode"
                   value={joinLobbyId}
                   onChange={(e) => setJoinLobbyId(e.target.value)}
                 />
                 <button type="button" onClick={joinLobby} disabled={!joinLobbyId.trim()}>
-                  Join Lobby
+                  Lobby beitreten
                 </button>
               </div>
             </>
@@ -317,6 +395,13 @@ export function App() {
 
           {visibility.showLobbyDetail && lobby && (
             <>
+              <div className="lobby-code-row">
+                <span className="lobby-code-label">Lobbycode</span>
+                <code>{lobby.id}</code>
+                <button type="button" onClick={copyLobbyCode}>
+                  {lobbyCodeCopied ? 'Kopiert' : 'Code kopieren'}
+                </button>
+              </div>
               <div className="player-list">
                 {lobby.players.map((p) => (
                   <PlayerRow
@@ -333,9 +418,9 @@ export function App() {
               {selfPlayer && editingSlotIndex !== null && (
                 <div className="slot-editor">
                   <div className="button-row">
-                    <span>Editing slot {editingSlotIndex + 1}</span>
+                    <span>                    Slot {editingSlotIndex + 1} bearbeiten</span>
                     <button type="button" onClick={clearEditingSlot}>
-                      Clear slot
+                      Slot leeren
                     </button>
                   </div>
                   <PokemonPicker onSelect={pickSpecies} selectedId={selfPlayer.slots[editingSlotIndex]?.pokemonId} />
@@ -343,7 +428,7 @@ export function App() {
               )}
               <div className="button-row leave-lobby-row">
                 <button type="button" onClick={leaveLobby}>
-                  Leave Lobby
+                  Lobby verlassen
                 </button>
               </div>
             </>
@@ -364,9 +449,9 @@ export function App() {
               checked={overlayClickThrough}
               onChange={(e) => toggleOverlayClickThrough(e.target.checked)}
             />
-            Click-through (lock overlay so it never blocks game input)
+            Click-through aktivieren, damit das Overlay keine Spieleingaben blockiert
           </label>
-          <p className="hint-line">Toggle anytime with Ctrl+Shift+O.</p>
+          <p className="hint-line">Mit Strg+Umschalt+O jederzeit umschalten.</p>
 
           <label>
             Position
@@ -374,10 +459,10 @@ export function App() {
               value={overlaySettings.position}
               onChange={(e) => updateOverlaySettings({ position: e.target.value as OverlayPosition })}
             >
-              <option value="bottom-right">Bottom right</option>
-              <option value="bottom-left">Bottom left</option>
-              <option value="top-right">Top right</option>
-              <option value="top-left">Top left</option>
+              <option value="bottom-right">Unten rechts</option>
+              <option value="bottom-left">Unten links</option>
+              <option value="top-right">Oben rechts</option>
+              <option value="top-left">Oben links</option>
             </select>
           </label>
 
@@ -399,25 +484,25 @@ export function App() {
               checked={overlaySettings.tooltipsEnabled}
               onChange={(e) => updateOverlaySettings({ tooltipsEnabled: e.target.checked })}
             />
-            Show Pokemon name tooltips on overlay hover
+            Pokémonnamen bei Hover anzeigen
           </label>
 
           <label>
-            Tooltip language
+            Sprache der Tooltips
             <select
               value={overlaySettings.tooltipLanguage}
               disabled={!overlaySettings.tooltipsEnabled}
               onChange={(e) => updateOverlaySettings({ tooltipLanguage: e.target.value as TooltipLanguage })}
             >
-              <option value="en">English</option>
+              <option value="en">Englisch</option>
               <option value="de">Deutsch</option>
             </select>
           </label>
 
           {overlaySettings.tooltipsEnabled && (
             <p className="hint-line">
-              Tooltips need real mouse hover -- if they don't appear over the overlay, toggle off click-through
-              (Ctrl+Shift+O) first.
+              Tooltips funktionieren nur bei echtem Hover. Wenn sie nicht erscheinen, schalte Click-through zuerst mit
+              Strg+Umschalt+O aus.
             </p>
           )}
         </AccordionItem>
@@ -426,14 +511,14 @@ export function App() {
       {visibility.showSaves && (
         <AccordionItem
           id="saves"
-          title="Saves"
+          title="Speicherstände"
           isOpen={openSection === 'saves'}
           onToggle={() => setOpenSection((current) => toggleAccordionSection(current, 'saves'))}
         >
           {visibility.showSaveCurrentAction && (
             <div className="save-current-row">
               <label>
-                Save name
+                Name des Speicherstands
                 <input
                   value={saveName}
                   onChange={(e) => setSaveName(e.target.value)}
@@ -442,9 +527,8 @@ export function App() {
               </label>
               <div className="button-row">
                 <button type="button" onClick={saveCurrent} disabled={!saveName.trim()}>
-                  {selectedSaveId ? 'Overwrite / Speichern' : 'Save / Speichern'}
+                  {selectedSaveId ? 'Überschreiben' : 'Speichern'}
                 </button>
-                {savedHint && <span className="saved-hint">{savedHint}</span>}
               </div>
             </div>
           )}
@@ -453,31 +537,38 @@ export function App() {
 
           <div className="save-load-row">
             <label>
-              Existing saves
+              Vorhandene Speicherstände
               <select value={selectedSaveId} onChange={(e) => onSelectSave(e.target.value)}>
-                <option value="">— New save —</option>
+                <option value="">Neuer Speicherstand</option>
                 {filteredSaves.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.name} ({s.playerCount} players, {new Date(s.updatedAt).toLocaleString()})
+                    {s.name} ({s.playerCount} Spieler, {new Date(s.updatedAt).toLocaleString()})
                   </option>
                 ))}
               </select>
             </label>
             <div className="button-row">
               <button type="button" onClick={loadSelectedSave} disabled={!selectedSaveId}>
-                Load / Restore
+                Laden / Wiederherstellen
               </button>
               <button type="button" onClick={() => handleDeleteSave(selectedSaveId)} disabled={!selectedSaveId}>
-                Delete
+                Löschen
               </button>
             </div>
             {filteredSaves.length === 0 && (
               <p className="empty-hint">
-                {saves.length === 0 ? 'No manual saves yet.' : 'No manual saves for this server yet.'}
+                {saves.length === 0
+                  ? 'Noch keine Speicherstände vorhanden.'
+                  : 'Für diesen Server gibt es noch keine Speicherstände.'}
               </p>
             )}
           </div>
         </AccordionItem>
+      )}
+      {successAlert && (
+        <div className="success-alert" role="status">
+          {successAlert}
+        </div>
       )}
     </div>
   );

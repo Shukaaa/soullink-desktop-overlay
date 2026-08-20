@@ -317,6 +317,20 @@ describe('SaveStateService - connection history', () => {
     expect(service.listConnectionHistory()).toEqual([]);
   });
 
+  it('removes a connection history entry and persists the result', () => {
+    service.recordConnection({ serverUrl: 'ws://a:8787', playerName: 'Ash' });
+    service.recordConnection({ serverUrl: 'ws://b:8787', playerName: 'Misty' });
+
+    const remaining = service.removeConnectionHistoryEntry({
+      serverUrl: 'WS://A:8787/',
+      playerName: ' ash ',
+    });
+
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]).toMatchObject({ serverUrl: 'ws://b:8787', playerName: 'Misty' });
+    expect(new SaveStateService(dir).listConnectionHistory()).toEqual(remaining);
+  });
+
   it('persists history atomically across service instances', () => {
     service.recordConnection({ serverUrl: 'ws://localhost:8787', playerName: 'Ash' });
     expect(fs.existsSync(path.join(dir, 'connection-history.json.tmp'))).toBe(false);

@@ -56,7 +56,10 @@ export function reduceWsEvent(state: AppState, event: WsEvent): Partial<AppState
         reconnectInfo: { attempt: event.attempt, delayMs: event.delayMs },
       };
     case 'close':
-      return { connectionStatus: 'closed' };
+      // Covers both an unexpected drop and a manual disconnect (which
+      // cancels any pending retry) -- either way, stale reconnect info from
+      // a previous attempt shouldn't linger around.
+      return { connectionStatus: 'closed', reconnectInfo: null };
     case 'client-error':
       return { error: event.message };
     case 'server-message':

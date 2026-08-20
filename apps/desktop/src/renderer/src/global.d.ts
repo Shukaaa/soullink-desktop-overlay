@@ -15,6 +15,10 @@ export interface SoulLinkApi {
   loadAutosave(): Promise<PublicSaveFile>;
   restoreSave(id: string): Promise<PublicSaveFile>;
   listConnectionHistory(): Promise<ConnectionHistoryEntry[]>;
+  deleteConnectionHistoryEntry(
+    entry: Pick<ConnectionHistoryEntry, 'serverUrl' | 'playerName'>
+  ): Promise<ConnectionHistoryEntry[]>;
+  copyToClipboard(text: string): Promise<void>;
   resizeOverlay(payload: OverlayResizePayload): Promise<void>;
   setOverlayIgnoreMouse(ignore: boolean): Promise<void>;
   getOverlaySettings(): Promise<OverlaySettings>;

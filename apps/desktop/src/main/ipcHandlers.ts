@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow } from 'electron';
+import { clipboard, ipcMain, type BrowserWindow } from 'electron';
 import type { LobbyState, OverlaySettings, RestoreLobbyStateMessage } from '@soullink/shared';
 import { safeParseClientMessage } from '@soullink/shared';
 import {
@@ -109,6 +109,18 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     IpcChannel.ConnectionHistoryList,
     (): ConnectionHistoryEntry[] => ctx.saveStateService.listConnectionHistory()
   );
+  ipcMain.handle(
+    IpcChannel.ConnectionHistoryDelete,
+    (_event, entry: Pick<ConnectionHistoryEntry, 'serverUrl' | 'playerName'>): ConnectionHistoryEntry[] =>
+      ctx.saveStateService.removeConnectionHistoryEntry(entry)
+  );
+
+  ipcMain.handle(IpcChannel.ClipboardWrite, (_event, text: string): void => {
+    if (typeof text !== 'string' || text.length === 0) {
+      throw new Error('Clipboard text must not be empty.');
+    }
+    clipboard.writeText(text);
+  });
 
   ipcMain.handle(
     IpcChannel.SaveLoadAutosave,

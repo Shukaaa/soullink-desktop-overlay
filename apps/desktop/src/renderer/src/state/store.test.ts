@@ -43,6 +43,14 @@ describe('reduceWsEvent', () => {
     });
   });
 
+  it('moves to closed and clears stale reconnect info (e.g. after cancelling a retry)', () => {
+    const result = reduceWsEvent(
+      { ...baseState, connectionStatus: 'reconnecting', reconnectInfo: { attempt: 3, delayMs: 5000 } },
+      { kind: 'close' }
+    );
+    expect(result).toEqual({ connectionStatus: 'closed', reconnectInfo: null });
+  });
+
   it('records client errors without touching connection status', () => {
     const result = reduceWsEvent(baseState, { kind: 'client-error', message: 'oops' });
     expect(result).toEqual({ error: 'oops' });

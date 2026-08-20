@@ -29,9 +29,13 @@ export function attachLobbyProtocol(wss: WebSocketServer, lobbyManager: LobbyMan
   }, HEARTBEAT_INTERVAL_MS);
   heartbeat.unref?.();
 
-  wss.on('connection', (rawWs) => {
+  wss.on('connection', (rawWs, request) => {
     const ws = rawWs as TrackedSocket;
     ws.isAlive = true;
+    logger.info('WebSocket client connected', {
+      remoteAddress: request.socket.remoteAddress ?? 'unknown',
+      activeConnections: wss.clients.size,
+    });
     ws.on('pong', () => {
       ws.isAlive = true;
     });
@@ -42,6 +46,7 @@ export function attachLobbyProtocol(wss: WebSocketServer, lobbyManager: LobbyMan
 
     ws.on('close', () => {
       lobbyManager.handleDisconnect(ws);
+      logger.info('WebSocket client disconnected', { activeConnections: wss.clients.size });
     });
 
     ws.on('error', (err) => {
@@ -57,17 +62,20 @@ function handleMessage(ws: WebSocket, raw: string, lobbyManager: LobbyManager): 
   try {
     json = JSON.parse(raw);
   } catch {
+    logger.warn('Invalid JSON received from client');
     sendError(ws, ErrorCode.INVALID_MESSAGE, 'Message was not valid JSON.');
     return;
   }
 
   const parsed = safeParseClientMessage(json);
   if (!parsed.success) {
+    logger.warn('Invalid client message received');
     sendError(ws, ErrorCode.INVALID_MESSAGE, 'Message failed validation.');
     return;
   }
 
   const message = parsed.data;
+  logger.info('Client message received', { type: message.type });
   try {
     switch (message.type) {
       case 'CREATE_LOBBY': {
@@ -100,6 +108,7 @@ function handleMessage(ws: WebSocket, raw: string, lobbyManager: LobbyManager): 
     }
   } catch (err) {
     if (err instanceof ProtocolError) {
+      logger.warn('Client action rejected', { type: message.type, code: err.code, message: err.message });
       sendError(ws, err.code, err.message);
     } else {
       logger.error('unexpected error handling message', {

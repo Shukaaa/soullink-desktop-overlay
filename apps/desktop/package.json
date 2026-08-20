@@ -40,6 +40,7 @@
   "build": {
     "appId": "com.soullink.desktop",
     "productName": "SoulLink Overlay",
+    "icon": "assets/icon.ico",
     "electronVersion": "33.4.11",
     "directories": {
       "output": "release"
@@ -48,6 +49,7 @@
     "buildDependenciesFromSource": false,
     "files": [
       "out/**/*",
+      "assets/**/*",
       "package.json",
       "!**/*.map",
       "!node_modules/@soullink/**/*",
@@ -60,6 +62,7 @@
       "!node_modules/zustand/**/*"
     ],
     "win": {
+      "icon": "assets/icon.ico",
       "target": [
         {
           "target": "nsis",
