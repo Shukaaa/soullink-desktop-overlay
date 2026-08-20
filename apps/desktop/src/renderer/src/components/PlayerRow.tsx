@@ -5,13 +5,28 @@ interface PlayerRowProps {
   player: PlayerInfo;
   isSelf: boolean;
   isHost: boolean;
+  /** Player id + slot index currently open in the editor, or null if none. */
+  editingPlayerId: string | null;
   editingSlotIndex: number | null;
-  onSlotClick: (index: number) => void;
+  onSlotClick: (playerId: string, index: number) => void;
   onKick: (playerId: string) => void;
 }
 
 /** One row in the control panel's player list: identity/host/kick controls plus that player's six slots. */
-export function PlayerRow({ player, isSelf, isHost, editingSlotIndex, onSlotClick, onKick }: PlayerRowProps) {
+export function PlayerRow({
+  player,
+  isSelf,
+  isHost,
+  editingPlayerId,
+  editingSlotIndex,
+  onSlotClick,
+  onKick,
+}: PlayerRowProps) {
+  // Every player may edit their own slots; the host may additionally edit
+  // any other player's slots. This must mirror LobbyManager.resolveEditTarget.
+  const canEdit = isSelf || isHost;
+  const activeIndex = player.id === editingPlayerId ? editingSlotIndex : null;
+
   return (
     <div className={`player-row${player.connected ? '' : ' disconnected'}`}>
       <div className="player-row-header">
@@ -29,8 +44,8 @@ export function PlayerRow({ player, isSelf, isHost, editingSlotIndex, onSlotClic
       </div>
       <SlotRow
         slots={player.slots}
-        onSlotClick={isSelf ? onSlotClick : undefined}
-        activeIndex={isSelf ? editingSlotIndex : null}
+        onSlotClick={canEdit ? (index) => onSlotClick(player.id, index) : undefined}
+        activeIndex={activeIndex}
       />
     </div>
   );

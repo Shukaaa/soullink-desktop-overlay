@@ -58,12 +58,13 @@ export function reduceWsEvent(state: AppState, event: WsEvent): Partial<AppState
     case 'close':
       // Covers both an unexpected drop and a manual disconnect (which
       // cancels any pending retry) -- either way, stale reconnect info from
-      // a previous attempt shouldn't linger around.
+      // a previous attempt shouldn't linger around, and neither should a
+      // stale hosted-lobbies list from before we lost the connection.
       return { connectionStatus: 'closed', reconnectInfo: null };
     case 'client-error':
       return { error: event.message };
     case 'server-message':
-      return reduceServerMessage(event.message);
+      return reduceServerMessage(state, event.message);
     case 'overlay-settings':
       return { overlaySettings: event.settings };
     default:
@@ -71,7 +72,7 @@ export function reduceWsEvent(state: AppState, event: WsEvent): Partial<AppState
   }
 }
 
-function reduceServerMessage(message: ServerMessage): Partial<AppState> {
+function reduceServerMessage(state: AppState, message: ServerMessage): Partial<AppState> {
   switch (message.type) {
     case 'STATE':
       return {
@@ -81,7 +82,14 @@ function reduceServerMessage(message: ServerMessage): Partial<AppState> {
       };
     case 'LEFT_LOBBY':
       // Voluntary leave: clear the lobby/identity but leave connectionStatus
-      // untouched -- we're still connected to the server, just not in a lobby.
+      // untouched -- we're still connected to the server, just not in a
+      // lobby. When `lobbyId` is present (a lobby-management action rather
+      // than a plain LEAVE_LOBBY reply) only clear if it actually matches
+      // the lobby currently shown, so deleting some *other* hosted lobby
+      // doesn't wipe out an unrelated active session.
+      if (message.lobbyId && state.lobby?.id !== message.lobbyId) {
+        return {};
+      }
       return { lobby: null, selfPlayerId: null, error: null };
     case 'ERROR':
       return { error: message.message };

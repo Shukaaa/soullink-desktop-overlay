@@ -20,11 +20,46 @@ describe('LobbyManager - host permissions', () => {
     memberId = joined.playerId;
   });
 
-  it('lets each player only ever edit their own slots', () => {
+  it('lets each player edit their own slots without a targetPlayerId', () => {
     manager.setPokemon(memberWs, 0, 1);
     const state = memberWs.lastMessage<{ state: LobbyState }>()!.state;
     expect(state.players.find((p) => p.id === memberId)!.slots[0]).toEqual({ pokemonId: 1 });
     expect(state.players.find((p) => p.id === hostId)!.slots[0]).toEqual({ pokemonId: null });
+  });
+
+  it('forbids a non-host from setting another player\'s slot via targetPlayerId', () => {
+    expect(() => manager.setPokemon(memberWs, 0, 1, hostId)).toThrowError(/only the lobby host/i);
+  });
+
+  it('forbids a non-host from clearing another player\'s slot via targetPlayerId', () => {
+    manager.setPokemon(hostWs, 0, 1);
+    expect(() => manager.removePokemon(memberWs, 0, hostId)).toThrowError(/only the lobby host/i);
+  });
+
+  it('lets the host set another player\'s slot via targetPlayerId', () => {
+    manager.setPokemon(hostWs, 0, 25, memberId);
+    const state = hostWs.lastMessage<{ state: LobbyState }>()!.state;
+    expect(state.players.find((p) => p.id === memberId)!.slots[0]).toEqual({ pokemonId: 25 });
+    // The host's own slot is untouched.
+    expect(state.players.find((p) => p.id === hostId)!.slots[0]).toEqual({ pokemonId: null });
+  });
+
+  it('lets the host clear another player\'s slot via targetPlayerId', () => {
+    manager.setPokemon(memberWs, 0, 1);
+    manager.removePokemon(hostWs, 0, memberId);
+    const state = hostWs.lastMessage<{ state: LobbyState }>()!.state;
+    expect(state.players.find((p) => p.id === memberId)!.slots[0]).toEqual({ pokemonId: null });
+  });
+
+  it('lets the host edit their own slot by passing their own id as targetPlayerId', () => {
+    manager.setPokemon(hostWs, 0, 7, hostId);
+    const state = hostWs.lastMessage<{ state: LobbyState }>()!.state;
+    expect(state.players.find((p) => p.id === hostId)!.slots[0]).toEqual({ pokemonId: 7 });
+  });
+
+  it('rejects the host targeting a player id that is not in this lobby', () => {
+    expect(() => manager.setPokemon(hostWs, 0, 1, 'ghost-id')).toThrowError(/not found/i);
+    expect(() => manager.removePokemon(hostWs, 0, 'ghost-id')).toThrowError(/not found/i);
   });
 
   it('forbids a non-host from kicking anyone', () => {

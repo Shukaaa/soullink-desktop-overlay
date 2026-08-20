@@ -96,6 +96,34 @@ describe('reduceWsEvent', () => {
     expect(result.connectionStatus).toBeUndefined();
   });
 
+  it('clears the lobby on a LEFT_LOBBY carrying a matching lobbyId', () => {
+    const connectedWithLobby: AppState = {
+      ...baseState,
+      connectionStatus: 'open',
+      lobby: lobbyState,
+      selfPlayerId: 'p1',
+    };
+    const result = reduceWsEvent(connectedWithLobby, {
+      kind: 'server-message',
+      message: { type: 'LEFT_LOBBY', lobbyId: lobbyState.id },
+    });
+    expect(result).toEqual({ lobby: null, selfPlayerId: null, error: null });
+  });
+
+  it('ignores a LEFT_LOBBY for a different lobbyId than the one currently shown', () => {
+    const connectedWithLobby: AppState = {
+      ...baseState,
+      connectionStatus: 'open',
+      lobby: lobbyState,
+      selfPlayerId: 'p1',
+    };
+    const result = reduceWsEvent(connectedWithLobby, {
+      kind: 'server-message',
+      message: { type: 'LEFT_LOBBY', lobbyId: 'SOME-OTHER-LOBBY' },
+    });
+    expect(result).toEqual({});
+  });
+
   it('applies an overlay-settings broadcast', () => {
     const settings = { position: 'top-left' as const, scale: 1.5, tooltipsEnabled: true, tooltipLanguage: 'de' as const };
     const result = reduceWsEvent(baseState, { kind: 'overlay-settings', settings });

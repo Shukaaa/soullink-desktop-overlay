@@ -85,6 +85,7 @@ export function App() {
   const [serverUrl, setServerUrl] = useState('ws://localhost:8787');
   const [playerName, setPlayerName] = useState('');
   const [joinLobbyId, setJoinLobbyId] = useState('');
+  const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
   const [editingSlotIndex, setEditingSlotIndex] = useState<number | null>(null);
   const [overlayClickThrough, setOverlayClickThrough] = useState(true);
   const [overlaySettings, setOverlaySettingsState] = useState<OverlaySettings>(DEFAULT_OVERLAY_SETTINGS);
@@ -177,7 +178,7 @@ export function App() {
   }
 
   const isHost = !!lobby && !!selfPlayerId && lobby.hostId === selfPlayerId;
-  const selfPlayer = lobby?.players.find((p) => p.id === selfPlayerId) ?? null;
+  const editingPlayer = editingPlayerId ? (lobby?.players.find((p) => p.id === editingPlayerId) ?? null) : null;
   const visibility = getPanelVisibility(connectionStatus, !!lobby);
   const filteredSaves = useMemo(() => filterSavesByServerUrl(saves, serverUrl), [saves, serverUrl]);
 
@@ -253,19 +254,42 @@ export function App() {
     window.api.send({ type: 'KICK_PLAYER', playerId });
   }
 
-  function onSlotClick(index: number) {
-    setEditingSlotIndex((current) => (current === index ? null : index));
+  function onSlotClick(playerId: string, index: number) {
+    if (editingPlayerId === playerId && editingSlotIndex === index) {
+      setEditingPlayerId(null);
+      setEditingSlotIndex(null);
+    } else {
+      setEditingPlayerId(playerId);
+      setEditingSlotIndex(index);
+    }
   }
 
   function pickSpecies(entry: PokedexEntry) {
-    if (editingSlotIndex === null) return;
-    window.api.send({ type: 'SET_POKEMON', slotIndex: editingSlotIndex, pokemonId: entry.id });
+    if (editingSlotIndex === null || !editingPlayerId) return;
+    if (editingPlayerId === selfPlayerId) {
+      // Preserve the legacy own-player message shape (no targetPlayerId).
+      window.api.send({ type: 'SET_POKEMON', slotIndex: editingSlotIndex, pokemonId: entry.id });
+    } else {
+      window.api.send({
+        type: 'SET_POKEMON',
+        slotIndex: editingSlotIndex,
+        pokemonId: entry.id,
+        targetPlayerId: editingPlayerId,
+      });
+    }
+    setEditingPlayerId(null);
     setEditingSlotIndex(null);
   }
 
   function clearEditingSlot() {
-    if (editingSlotIndex === null) return;
-    window.api.send({ type: 'REMOVE_POKEMON', slotIndex: editingSlotIndex });
+    if (editingSlotIndex === null || !editingPlayerId) return;
+    if (editingPlayerId === selfPlayerId) {
+      // Preserve the legacy own-player message shape (no targetPlayerId).
+      window.api.send({ type: 'REMOVE_POKEMON', slotIndex: editingSlotIndex });
+    } else {
+      window.api.send({ type: 'REMOVE_POKEMON', slotIndex: editingSlotIndex, targetPlayerId: editingPlayerId });
+    }
+    setEditingPlayerId(null);
     setEditingSlotIndex(null);
   }
 
@@ -499,21 +523,25 @@ export function App() {
                     player={p}
                     isSelf={p.id === selfPlayerId}
                     isHost={isHost}
+                    editingPlayerId={editingPlayerId}
                     editingSlotIndex={editingSlotIndex}
                     onSlotClick={onSlotClick}
                     onKick={kickPlayer}
                   />
                 ))}
               </div>
-              {selfPlayer && editingSlotIndex !== null && (
+              {editingPlayer && editingSlotIndex !== null && (
                 <div className="slot-editor">
                   <div className="button-row">
-                    <span>                    Slot {editingSlotIndex + 1} bearbeiten</span>
+                    <span>
+                      Slot {editingSlotIndex + 1} bearbeiten
+                      {editingPlayer.id !== selfPlayerId ? ` (${editingPlayer.name})` : ''}
+                    </span>
                     <button type="button" onClick={clearEditingSlot}>
                       Slot leeren
                     </button>
                   </div>
-                  <PokemonPicker onSelect={pickSpecies} selectedId={selfPlayer.slots[editingSlotIndex]?.pokemonId} />
+                  <PokemonPicker onSelect={pickSpecies} selectedId={editingPlayer.slots[editingSlotIndex]?.pokemonId} />
                 </div>
               )}
               <div className="button-row leave-lobby-row">

@@ -94,10 +94,10 @@ function handleMessage(ws: WebSocket, raw: string, lobbyManager: LobbyManager): 
         break;
       }
       case 'SET_POKEMON':
-        lobbyManager.setPokemon(ws, message.slotIndex, message.pokemonId);
+        lobbyManager.setPokemon(ws, message.slotIndex, message.pokemonId, message.targetPlayerId);
         break;
       case 'REMOVE_POKEMON':
-        lobbyManager.removePokemon(ws, message.slotIndex);
+        lobbyManager.removePokemon(ws, message.slotIndex, message.targetPlayerId);
         break;
       case 'KICK_PLAYER':
         lobbyManager.kickPlayer(ws, message.playerId);

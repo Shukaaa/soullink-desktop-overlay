@@ -50,8 +50,33 @@ describe('protocol validation', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts SET_POKEMON with a targetPlayerId for host-on-behalf edits', () => {
+    const result = safeParseClientMessage({
+      type: 'SET_POKEMON',
+      slotIndex: 0,
+      pokemonId: 25,
+      targetPlayerId: 'p2',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects SET_POKEMON with an empty targetPlayerId', () => {
+    const result = safeParseClientMessage({
+      type: 'SET_POKEMON',
+      slotIndex: 0,
+      pokemonId: 25,
+      targetPlayerId: '',
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('accepts REMOVE_POKEMON with a valid slotIndex', () => {
     const result = safeParseClientMessage({ type: 'REMOVE_POKEMON', slotIndex: 5 });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts REMOVE_POKEMON with a targetPlayerId for host-on-behalf edits', () => {
+    const result = safeParseClientMessage({ type: 'REMOVE_POKEMON', slotIndex: 5, targetPlayerId: 'p2' });
     expect(result.success).toBe(true);
   });
 

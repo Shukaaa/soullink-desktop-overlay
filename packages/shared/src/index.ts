@@ -28,7 +28,14 @@ export {
   parseClientMessage,
   safeParseClientMessage,
 } from './protocol';
-export type { PokemonSlotInput, PlayerSnapshot, StateMessage, ErrorMessage, LeftLobbyMessage, ServerMessage } from './protocol';
+export type {
+  PokemonSlotInput,
+  PlayerSnapshot,
+  StateMessage,
+  ErrorMessage,
+  LeftLobbyMessage,
+  ServerMessage,
+} from './protocol';
 
 export { ErrorCode, ProtocolError } from './errors';
 

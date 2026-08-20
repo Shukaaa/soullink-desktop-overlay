@@ -60,12 +60,20 @@ export const SetPokemonMessage = z.object({
   type: z.literal('SET_POKEMON'),
   slotIndex,
   pokemonId,
+  /**
+   * When omitted, the actor edits their own slots (unchanged legacy
+   * behavior). When present and different from the actor's own id, the
+   * server requires the actor to be the lobby host (see LobbyManager).
+   */
+  targetPlayerId: idString.optional(),
 });
 export type SetPokemonMessage = z.infer<typeof SetPokemonMessage>;
 
 export const RemovePokemonMessage = z.object({
   type: z.literal('REMOVE_POKEMON'),
   slotIndex,
+  /** See SetPokemonMessage.targetPlayerId. */
+  targetPlayerId: idString.optional(),
 });
 export type RemovePokemonMessage = z.infer<typeof RemovePokemonMessage>;
 
@@ -142,9 +150,16 @@ export interface ErrorMessage {
  * STATE broadcast never reaches a player after they've been removed from a
  * lobby's player list. This lets the client explicitly clear its local lobby
  * state instead of silently holding on to a stale snapshot.
+ *
  */
 export interface LeftLobbyMessage {
   type: 'LEFT_LOBBY';
+  lobbyId?: string;
 }
 
+/**
+ * Coarse, non-identifying summary of one lobby: enough for a host to
+ * recognize/manage a lobby they created without exposing player names or
+ * chosen species to whoever asked for the list.
+ */
 export type ServerMessage = StateMessage | ErrorMessage | LeftLobbyMessage;

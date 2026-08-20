@@ -248,25 +248,38 @@ export class LobbyManager {
     return this.createFromSnapshot(ws, msg, false);
   }
 
-  setPokemon(ws: WebSocket, slotIndex: number, pokemonId: number): void {
+  setPokemon(ws: WebSocket, slotIndex: number, pokemonId: number, targetPlayerId?: string): void {
     const { lobby, player } = this.requireConnection(ws);
     this.requireValidSlotIndex(slotIndex);
     if (!isValidSpeciesId(pokemonId)) {
       throw new ProtocolError(ErrorCode.INVALID_MESSAGE, 'Unknown species id.');
     }
-    player.slots[slotIndex] = { pokemonId };
+    const target = this.resolveEditTarget(lobby, player, targetPlayerId);
+    target.slots[slotIndex] = { pokemonId };
     this.persist(lobby);
     this.broadcastState(lobby);
-    logger.info('Pokemon slot updated', { lobbyId: lobby.id, playerId: player.id, slotIndex, pokemonId });
+    logger.info('Pokemon slot updated', {
+      lobbyId: lobby.id,
+      playerId: player.id,
+      targetPlayerId: target.id,
+      slotIndex,
+      pokemonId,
+    });
   }
 
-  removePokemon(ws: WebSocket, slotIndex: number): void {
+  removePokemon(ws: WebSocket, slotIndex: number, targetPlayerId?: string): void {
     const { lobby, player } = this.requireConnection(ws);
     this.requireValidSlotIndex(slotIndex);
-    player.slots[slotIndex] = { pokemonId: null };
+    const target = this.resolveEditTarget(lobby, player, targetPlayerId);
+    target.slots[slotIndex] = { pokemonId: null };
     this.persist(lobby);
     this.broadcastState(lobby);
-    logger.info('Pokemon slot cleared', { lobbyId: lobby.id, playerId: player.id, slotIndex });
+    logger.info('Pokemon slot cleared', {
+      lobbyId: lobby.id,
+      playerId: player.id,
+      targetPlayerId: target.id,
+      slotIndex,
+    });
   }
 
   kickPlayer(ws: WebSocket, targetPlayerId: string): void {
@@ -503,6 +516,25 @@ export class LobbyManager {
     if (!player.isHost) {
       throw new ProtocolError(ErrorCode.NOT_HOST, 'Only the lobby host can do that.');
     }
+  }
+
+  /**
+   * Resolves which player's slots an actor is allowed to edit. Editing one's
+   * own slots (the default, `targetPlayerId` omitted or equal to the
+   * actor's own id) is always allowed. Editing another player's slots
+   * requires the actor to be the lobby host, and the target must belong to
+   * this lobby.
+   */
+  private resolveEditTarget(lobby: LobbyRecord, actor: PlayerRecord, targetPlayerId?: string): PlayerRecord {
+    if (!targetPlayerId || targetPlayerId === actor.id) {
+      return actor;
+    }
+    this.requireHost(actor);
+    const target = lobby.players.get(targetPlayerId);
+    if (!target) {
+      throw new ProtocolError(ErrorCode.PLAYER_NOT_FOUND, 'Player not found in this lobby.');
+    }
+    return target;
   }
 
   private requireValidSlotIndex(slotIndex: number): void {
