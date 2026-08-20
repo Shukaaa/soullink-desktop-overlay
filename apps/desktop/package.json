@@ -1,0 +1,83 @@
+{
+  "name": "@soullink/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SoulLink Overlay desktop client (Electron + Vite + React)",
+  "author": "SoulLink Overlay",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "test": "vitest run",
+    "start": "electron-vite preview",
+    "package": "electron-builder --win --publish=never",
+    "package:dir": "electron-builder --win --dir --publish=never",
+    "clean": "rimraf out release *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@soullink/shared": "*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/ws": "^8.5.13",
+    "@vitejs/plugin-react": "^4.3.3",
+    "electron": "^33.2.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^2.3.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.4"
+  },
+  "build": {
+    "appId": "com.soullink.desktop",
+    "productName": "SoulLink Overlay",
+    "electronVersion": "33.4.11",
+    "directories": {
+      "output": "release"
+    },
+    "npmRebuild": false,
+    "buildDependenciesFromSource": false,
+    "files": [
+      "out/**/*",
+      "package.json",
+      "!**/*.map",
+      "!node_modules/@soullink/**/*",
+      "!node_modules/react/**/*",
+      "!node_modules/react-dom/**/*",
+      "!node_modules/scheduler/**/*",
+      "!node_modules/loose-envify/**/*",
+      "!node_modules/js-tokens/**/*",
+      "!node_modules/use-sync-external-store/**/*",
+      "!node_modules/zustand/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}.${ext}"
+    }
+  }
+}

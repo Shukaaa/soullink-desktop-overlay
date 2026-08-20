@@ -1,0 +1,32 @@
+{
+  "name": "soullink-desktop-overlay",
+  "private": true,
+  "version": "0.1.0",
+  "description": "SoulLink Overlay - local multiplayer Nuzlocke SoulLink tracking overlay",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "build": "npm run build -w packages/shared && npm run build -w apps/server && npm run build -w apps/desktop",
+    "typecheck": "npm run build -w packages/shared && npm run typecheck -w apps/server && npm run typecheck -w apps/desktop",
+    "test": "npm run build -w packages/shared && npm run test -w packages/shared && npm run test -w apps/server && npm run test -w apps/desktop",
+    "dev:server": "npm run dev -w apps/server",
+    "dev:desktop": "npm run dev -w apps/desktop",
+    "package:desktop": "npm run build -w packages/shared && npm run build -w apps/desktop && npm run package -w apps/desktop",
+    "clean": "npm run clean --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true,
+    "esbuild@0.21.5": true,
+    "esbuild@0.28.2": true,
+    "better-sqlite3@13.0.3": true,
+    "electron-winstaller@5.4.0": true
+  }
+}

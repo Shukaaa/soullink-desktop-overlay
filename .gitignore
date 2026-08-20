@@ -1,0 +1,31 @@
+node_modules/
+dist/
+out/
+build/
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.env
+.env.local
+
+# Electron / vite
+apps/desktop/out/
+apps/desktop/dist/
+apps/desktop/.vite/
+
+# electron-builder packaging output (installer/portable EXE, unpacked app)
+apps/desktop/release/
+
+# server-local SQLite database (see apps/server DB_PATH / README Railway section)
+apps/server/data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# test scratch
+**/.tmp-test/
+
+# editor
+.vscode/
+*.tsbuildinfo

@@ -1,0 +1,82 @@
+html,
+body {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+/* Overlay renders each player's name next to their six-slot row -- kept
+   minimal/transparent, no other UI chrome. */
+.overlay-root {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  font-family: system-ui, sans-serif;
+}
+
+.overlay-player-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Deterministic per-row accent palette (see @soullink/shared getPlayerRowColor),
+   cycling red/blue/green/yellow by row index. Each row exposes its accent as
+   CSS variables so the name and slot-cell rules below stay in one place
+   instead of duplicating colors per palette entry. */
+.overlay-player-row--red {
+  --row-accent: #ff6b6b;
+  --row-accent-soft: rgba(255, 107, 107, 0.45);
+}
+
+.overlay-player-row--blue {
+  --row-accent: #5ca9ff;
+  --row-accent-soft: rgba(92, 169, 255, 0.45);
+}
+
+.overlay-player-row--green {
+  --row-accent: #57d68d;
+  --row-accent-soft: rgba(87, 214, 141, 0.45);
+}
+
+.overlay-player-row--yellow {
+  --row-accent: #f2d34c;
+  --row-accent-soft: rgba(242, 211, 76, 0.45);
+}
+
+/* Fixed width so every row's slots start at the same x offset, keeping
+   slot columns (and therefore SoulLink pairings) aligned across players. */
+.overlay-player-name {
+  flex: 0 0 88px;
+  width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-size: 12px;
+  color: var(--row-accent, #f2f2f5);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
+
+.slot-row {
+  display: flex;
+  gap: 6px;
+}
+
+.slot-cell {
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  background: rgba(10, 12, 18, 0.55);
+  border: 1px solid var(--row-accent-soft, transparent);
+  box-shadow: 0 0 4px 0 var(--row-accent-soft, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.slot-cell.slot-empty {
+  background: rgba(10, 12, 18, 0.25);
+}
