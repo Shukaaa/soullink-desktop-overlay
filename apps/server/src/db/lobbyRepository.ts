@@ -1,4 +1,4 @@
-import type { PokemonSlot } from '@soullink/shared';
+import type { GameVersionId, PokemonSlot } from '@soullink/shared';
 
 /**
  * Plain-data (no WebSocket, no timers) representation of a persisted player,
@@ -26,6 +26,8 @@ export interface PersistedLobby {
   id: string;
   hostId: string;
   createdAt: number;
+  gameVersionId: GameVersionId | null;
+  ordenes: boolean[];
   players: PersistedPlayer[];
 }
 

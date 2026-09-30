@@ -6,7 +6,7 @@
  * `SaveStateService` is the actual source of truth/validator; these types
  * just need to stay structurally compatible with it.
  */
-import type { OverlaySettings, PokemonSlot } from '@soullink/shared';
+import type { GameVersionId, OverlaySettings, PokemonSlot } from '@soullink/shared';
 
 export interface SavedPlayer {
   id: string;
@@ -29,6 +29,8 @@ export interface SaveFile {
   selfPlayerId: string | null;
   selfToken: string | null;
   players: SavedPlayer[];
+  gameVersionId: GameVersionId | null;
+  ordenes: boolean[];
   updatedAt: number;
   overlaySettings: OverlaySettings;
 }

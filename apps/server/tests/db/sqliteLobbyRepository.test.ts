@@ -39,6 +39,8 @@ function sampleLobby(overrides: Partial<PersistedLobby> = {}): PersistedLobby {
     id: 'LOBBY1',
     hostId: 'player-1',
     createdAt: 1000,
+    gameVersionId: null,
+    ordenes: [],
     players: [samplePlayer()],
     ...overrides,
   };
@@ -98,11 +100,13 @@ describe('SqliteLobbyRepository', () => {
     raw.close();
   });
 
-  it('round-trips a full lobby: players, six slots, host, and tokens', () => {
+  it('round-trips a full lobby including orden progress', () => {
     ({ dir, dbPath } = makeTempDbPath());
     repo = new SqliteLobbyRepository(dbPath);
 
     const lobby = sampleLobby({
+      gameVersionId: 'red',
+      ordenes: [true, false, true],
       players: [
         samplePlayer({ id: 'p1', isHost: true, slots: [{ pokemonId: 25 }, ...Array.from({ length: 5 }, () => ({ pokemonId: null }))] }),
         samplePlayer({ id: 'p2', name: 'Misty', token: 'token-2', isHost: false, connected: false, disconnectedAt: 2000 }),
@@ -112,6 +116,8 @@ describe('SqliteLobbyRepository', () => {
 
     const [loaded] = repo.loadAll();
     expect(loaded.hostId).toBe('player-1');
+    expect(loaded.gameVersionId).toBe('red');
+    expect(loaded.ordenes).toEqual([true, false, true]);
     expect(loaded.players).toHaveLength(2);
     const p1 = loaded.players.find((p) => p.id === 'p1')!;
     expect(p1.slots).toHaveLength(6);
@@ -169,5 +175,38 @@ describe('SqliteLobbyRepository', () => {
     const [loaded] = repo.loadAll();
     expect(loaded.players[0].slots).toHaveLength(6);
     expect(loaded.players[0].slots.every((s) => s.pokemonId === null)).toBe(true);
+  });
+
+  it('migrates a version 1 database and defaults its orden progress to empty', () => {
+    ({ dir, dbPath } = makeTempDbPath());
+    const raw = new Database(dbPath);
+    raw.exec(`
+      CREATE TABLE lobbies (id TEXT PRIMARY KEY, host_id TEXT NOT NULL, created_at INTEGER NOT NULL);
+      INSERT INTO lobbies (id, host_id, created_at) VALUES ('OLD1', 'p1', 1);
+      PRAGMA user_version = 1;
+    `);
+    raw.close();
+
+    repo = new SqliteLobbyRepository(dbPath);
+    expect(repo.loadAll()[0]).toMatchObject({ id: 'OLD1', gameVersionId: null, ordenes: [] });
+  });
+
+  it('migrates a version 2 database by adding the game-version field', () => {
+    ({ dir, dbPath } = makeTempDbPath());
+    const raw = new Database(dbPath);
+    raw.exec(`
+      CREATE TABLE lobbies (
+        id TEXT PRIMARY KEY,
+        host_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        ordenes_json TEXT NOT NULL DEFAULT '[]'
+      );
+      INSERT INTO lobbies (id, host_id, created_at, ordenes_json) VALUES ('OLD2', 'p1', 1, '[true]');
+      PRAGMA user_version = 2;
+    `);
+    raw.close();
+
+    repo = new SqliteLobbyRepository(dbPath);
+    expect(repo.loadAll()[0]).toMatchObject({ id: 'OLD2', gameVersionId: null, ordenes: [true] });
   });
 });

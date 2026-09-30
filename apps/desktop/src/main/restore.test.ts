@@ -39,6 +39,8 @@ describe('buildRestoreMessage', () => {
       hostId: 'p1',
       selfPlayerId: 'p1',
       selfToken: 'tok1',
+      gameVersionId: 'red' as const,
+      ordenes: [true, false, false, false, false, false, false, false],
       players: [
         { id: 'p1', name: 'Ash', isHost: true, slots: emptySlots(25) },
         { id: 'p2', name: 'Misty', isHost: false, slots: emptySlots() },
@@ -47,6 +49,8 @@ describe('buildRestoreMessage', () => {
     const message = buildRestoreMessage(save);
     expect(message?.snapshot).toEqual({
       hostId: 'p1',
+      gameVersionId: 'red',
+      ordenes: [true, false, false, false, false, false, false, false],
       players: [
         { id: 'p1', name: 'Ash', isHost: true, slots: emptySlots(25) },
         { id: 'p2', name: 'Misty', isHost: false, slots: emptySlots() },
@@ -61,6 +65,8 @@ describe('deriveSaveLobbyFields', () => {
       id: 'ABC123',
       hostId: 'p1',
       createdAt: Date.now(),
+      gameVersionId: 'red',
+      ordenes: [true, false, false, false, false, false, false, false],
       players: [
         { id: 'p1', name: 'Ash', isHost: true, connected: true, slots: emptySlots(25) },
         { id: 'p2', name: 'Misty', isHost: false, connected: true, slots: emptySlots() },
@@ -70,6 +76,8 @@ describe('deriveSaveLobbyFields', () => {
       lobbyId: 'ABC123',
       hostId: 'p1',
       selfPlayerId: 'p1',
+      gameVersionId: 'red',
+      ordenes: [true, false, false, false, false, false, false, false],
       players: [
         { id: 'p1', name: 'Ash', isHost: true, slots: emptySlots(25) },
         { id: 'p2', name: 'Misty', isHost: false, slots: emptySlots() },

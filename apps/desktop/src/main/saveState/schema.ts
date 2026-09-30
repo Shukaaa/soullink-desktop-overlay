@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import {
   DEFAULT_OVERLAY_SETTINGS,
+  isGameVersionId,
   MAX_NAME_LENGTH,
+  MAX_ORDEN_COUNT,
   MAX_OVERLAY_SCALE,
   MIN_OVERLAY_SCALE,
   OVERLAY_POSITIONS,
@@ -9,6 +11,7 @@ import {
   TOOLTIP_LANGUAGES,
   normalizeOverlaySettings,
 } from '@soullink/shared';
+import type { GameVersionId } from '@soullink/shared';
 
 export const SAVE_FILE_VERSION = 1;
 
@@ -62,6 +65,12 @@ export const saveFileSchema = z.object({
   selfPlayerId: z.string().max(64).nullable(),
   selfToken: z.string().max(128).nullable(),
   players: z.array(savedPlayerSchema).max(64),
+  gameVersionId: z
+    .string()
+    .refine((value): value is GameVersionId => isGameVersionId(value))
+    .nullable()
+    .default(null),
+  ordenes: z.array(z.boolean()).max(MAX_ORDEN_COUNT).default([]),
   updatedAt: z.number(),
   overlaySettings: overlaySettingsSchema,
 });
@@ -90,6 +99,8 @@ export function emptySaveFile(id: string, name: string): SaveFile {
     selfPlayerId: null,
     selfToken: null,
     players: [],
+    gameVersionId: null,
+    ordenes: [],
     updatedAt: Date.now(),
     overlaySettings: DEFAULT_OVERLAY_SETTINGS,
   };

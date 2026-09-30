@@ -7,7 +7,7 @@ import type Database from 'better-sqlite3';
  * durable, requires no extra table, and is read/written atomically with the
  * rest of the file.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 3;
 
 /**
  * Initializes (or safely reuses) the on-disk schema. Always uses
@@ -54,10 +54,12 @@ export function initSchema(db: Database.Database): void {
 
   const currentVersion = db.pragma('user_version', { simple: true }) as number;
   if (currentVersion < SCHEMA_VERSION) {
-    // No migrations exist yet beyond the initial CREATE TABLE IF NOT EXISTS
-    // above; future schema changes should branch on `currentVersion` here
-    // (e.g. `if (currentVersion < 2) { db.exec('ALTER TABLE ...'); }`) before
-    // this final bump.
+    if (currentVersion < 2) {
+      db.exec("ALTER TABLE lobbies ADD COLUMN ordenes_json TEXT NOT NULL DEFAULT '[]'");
+    }
+    if (currentVersion < 3) {
+      db.exec('ALTER TABLE lobbies ADD COLUMN game_version_id TEXT');
+    }
     db.pragma(`user_version = ${SCHEMA_VERSION}`);
   }
 }

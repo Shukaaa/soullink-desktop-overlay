@@ -49,6 +49,8 @@ describe('LobbyManager + SqliteLobbyRepository - persistence across restarts', (
     const { playerId: memberId, token: memberToken } = managerA.joinLobby(memberWs, lobbyId, 'Misty');
     managerA.setPokemon(hostWs, 0, 25);
     managerA.setPokemon(memberWs, 3, 1);
+    managerA.setGameVersion(hostWs, 'red');
+    managerA.toggleOrden(memberWs, 1);
     // Both sockets "disconnect" (simulating the process dying) without an
     // explicit LEAVE_LOBBY -- this is the realistic restart scenario.
     managerA.shutdown();
@@ -69,6 +71,9 @@ describe('LobbyManager + SqliteLobbyRepository - persistence across restarts', (
     });
     expect(hostResult.playerId).toBe(hostId);
     expect(hostResult.state.hostId).toBe(hostId);
+    expect(hostResult.state.gameVersionId).toBe('red');
+    expect(hostResult.state.ordenes).toHaveLength(8);
+    expect(hostResult.state.ordenes[1]).toBe(true);
     const hostSlots = hostResult.state.players.find((p) => p.id === hostId)!.slots;
     expect(hostSlots).toHaveLength(SLOT_COUNT);
     expect(hostSlots[0]).toEqual({ pokemonId: 25 });
@@ -83,6 +88,8 @@ describe('LobbyManager + SqliteLobbyRepository - persistence across restarts', (
     });
     const memberSlots = memberResult.state.players.find((p) => p.id === memberId)!.slots;
     expect(memberSlots[3]).toEqual({ pokemonId: 1 });
+    expect(memberResult.state.gameVersionId).toBe('red');
+    expect(memberResult.state.ordenes[1]).toBe(true);
   });
 
   it('rejects reconnecting with the wrong token after a restart, same as before a restart', () => {
@@ -119,6 +126,8 @@ describe('LobbyManager + SqliteLobbyRepository - persistence across restarts', (
       id: 'STALE1',
       hostId: 'host-1',
       createdAt: longAgo,
+      gameVersionId: null,
+      ordenes: [],
       players: [
         {
           id: 'host-1',
@@ -181,6 +190,8 @@ describe('LobbyManager + SqliteLobbyRepository - persistence across restarts', (
       id: 'GONE1',
       hostId: 'host-1',
       createdAt: longAgo,
+      gameVersionId: null,
+      ordenes: [],
       players: [
         {
           id: 'host-1',

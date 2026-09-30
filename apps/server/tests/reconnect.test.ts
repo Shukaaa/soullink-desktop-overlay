@@ -130,6 +130,8 @@ describe('LobbyManager - restoring from a snapshot after the server loses state'
       token: 'stale-token',
       snapshot: {
         hostId: 'host-1',
+        gameVersionId: 'red',
+        ordenes: [true, false, true],
         players: [
           {
             id: 'host-1',
@@ -149,6 +151,8 @@ describe('LobbyManager - restoring from a snapshot after the server loses state'
 
     expect(result.playerId).toBe('host-1');
     expect(result.state.players).toHaveLength(2);
+    expect(result.state.gameVersionId).toBe('red');
+    expect(result.state.ordenes).toEqual([true, false, true, false, false, false, false, false]);
     const host = result.state.players.find((p) => p.id === 'host-1')!;
     expect(host.connected).toBe(true);
     expect(host.slots[0]).toEqual({ pokemonId: 25 });

@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PokedexEntry, OverlayPosition, OverlaySettings, TooltipLanguage } from '@soullink/shared';
-import { DEFAULT_OVERLAY_SETTINGS, MAX_OVERLAY_SCALE, MIN_OVERLAY_SCALE } from '@soullink/shared';
+import {
+  DEFAULT_OVERLAY_SETTINGS,
+  GAME_VERSION_GROUPS,
+  getGameVersion,
+  MAX_OVERLAY_SCALE,
+  MIN_OVERLAY_SCALE,
+  isGameVersionId,
+} from '@soullink/shared';
 import type { ConnectionHistoryEntry } from '../../../common/connectionHistoryTypes';
 import type { SaveFileMeta } from '../../../common/saveTypes';
 import { useAppStore, type ConnectionStatus } from '../state/store';
@@ -178,6 +185,12 @@ export function App() {
   }
 
   const isHost = !!lobby && !!selfPlayerId && lobby.hostId === selfPlayerId;
+  const selectedGameVersion = lobby?.gameVersionId ? getGameVersion(lobby.gameVersionId) : null;
+  const ordenCheckedCount = lobby?.ordenes.filter(Boolean).length ?? 0;
+  const ordenProgress =
+    selectedGameVersion && selectedGameVersion.count > 0
+      ? (ordenCheckedCount / selectedGameVersion.count) * 100
+      : 0;
   const editingPlayer = editingPlayerId ? (lobby?.players.find((p) => p.id === editingPlayerId) ?? null) : null;
   const visibility = getPanelVisibility(connectionStatus, !!lobby);
   const filteredSaves = useMemo(() => filterSavesByServerUrl(saves, serverUrl), [saves, serverUrl]);
@@ -248,6 +261,15 @@ export function App() {
 
   function leaveLobby() {
     window.api.send({ type: 'LEAVE_LOBBY' });
+  }
+
+  function changeGameVersion(gameVersionId: string) {
+    if (!isGameVersionId(gameVersionId)) return;
+    window.api.send({ type: 'SET_GAME_VERSION', gameVersionId });
+  }
+
+  function toggleOrden(index: number) {
+    window.api.send({ type: 'TOGGLE_ORDEN', index });
   }
 
   function kickPlayer(playerId: string) {
@@ -515,6 +537,83 @@ export function App() {
                 <button type="button" onClick={copyLobbyCode}>
                   {lobbyCodeCopied ? 'Kopiert' : 'Code kopieren'}
                 </button>
+              </div>
+              <div className="orden-panel">
+                <label className="orden-version-control">
+                  Spielversion
+                  <select
+                    value={lobby.gameVersionId ?? ''}
+                    disabled={!isHost}
+                    required
+                    onChange={(e) => changeGameVersion(e.target.value)}
+                  >
+                    <option value="" disabled>
+                      Spielversion auswählen
+                    </option>
+                    {GAME_VERSION_GROUPS.map((group) => (
+                      <optgroup key={group.label} label={group.label}>
+                        {group.versions.map((version) => (
+                          <option key={version.id} value={version.id}>
+                            {version.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </label>
+                {!isHost && <p className="orden-hint">Nur der Host kann die Spielversion ändern.</p>}
+                {!selectedGameVersion ? (
+                  <p className="orden-hint">Wähle eine Spielversion, um die passende Liste anzuzeigen.</p>
+                ) : selectedGameVersion.count === 0 ? (
+                  <p className="orden-hint">{selectedGameVersion.emptyMessage}</p>
+                ) : (
+                  <>
+                    <div className="orden-heading">
+                      <h3>{selectedGameVersion.heading}</h3>
+                      <span>
+                        {ordenCheckedCount} von {selectedGameVersion.count} abgehakt
+                      </span>
+                    </div>
+                    <div
+                      className="orden-progress"
+                      role="progressbar"
+                      aria-label={`${selectedGameVersion.heading}-Fortschritt`}
+                      aria-valuemin={0}
+                      aria-valuemax={selectedGameVersion.count}
+                      aria-valuenow={ordenCheckedCount}
+                    >
+                      <span style={{ width: `${ordenProgress}%` }} />
+                    </div>
+                    <p className="orden-hint">
+                      Übliche Nuzlocke-Regel: Cap = höchstes Level im Team der Herausforderung. Ein Versionswechsel
+                      setzt den Fortschritt zurück.
+                    </p>
+                    {selectedGameVersion.progressNote && (
+                      <p className="orden-hint">{selectedGameVersion.progressNote}</p>
+                    )}
+                    <div className="orden-list">
+                      {lobby.ordenes.map((checked, index) => (
+                        <label
+                          key={index}
+                          className={`orden-item${checked ? ' orden-item-checked' : ''}`}
+                        >
+                          <span className="orden-item-main">
+                            <input type="checkbox" checked={checked} onChange={() => toggleOrden(index)} />
+                            <span className="orden-item-name">{selectedGameVersion.itemNames[index]}</span>
+                          </span>
+                          <span
+                            className="orden-level-cap"
+                            title={`Level-Cap: ${selectedGameVersion.levelCaps[index]}`}
+                            aria-label={`Level-Cap ${selectedGameVersion.levelCaps[index]}`}
+                          >
+                            <span>LEVEL-CAP</span>
+                            <strong>{selectedGameVersion.levelCaps[index]}</strong>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
               <div className="player-list">
                 {lobby.players.map((p) => (

@@ -15,7 +15,12 @@ export function buildRestoreMessage(save: SaveFile): RestoreLobbyStateMessage | 
 
   const snapshot =
     save.hostId && save.players.length > 0
-      ? { hostId: save.hostId, players: save.players.map(toPlayerSnapshot) }
+      ? {
+          hostId: save.hostId,
+          players: save.players.map(toPlayerSnapshot),
+          gameVersionId: save.gameVersionId,
+          ordenes: save.ordenes,
+        }
       : undefined;
 
   return {
@@ -67,6 +72,8 @@ export interface SaveLobbyFields {
   hostId: string;
   selfPlayerId: string;
   players: SavedPlayer[];
+  gameVersionId: LobbyState['gameVersionId'];
+  ordenes: boolean[];
 }
 
 /** Derives the save-file fields to persist from a fresh authoritative LobbyState. */
@@ -76,5 +83,7 @@ export function deriveSaveLobbyFields(state: LobbyState, selfPlayerId: string): 
     hostId: state.hostId,
     selfPlayerId,
     players: state.players.map((p) => ({ id: p.id, name: p.name, isHost: p.isHost, slots: p.slots })),
+    gameVersionId: state.gameVersionId,
+    ordenes: state.ordenes,
   };
 }

@@ -4,10 +4,14 @@
 
 export type PlayerId = string;
 export type LobbyId = string;
+import type { GameVersionId } from './gameVersions';
+
+export type { GameVersionId } from './gameVersions';
 
 /** Fixed number of team slots every player has. SoulLinks are derived purely
  * by matching slot index across players -- there is no separate link entity. */
 export const SLOT_COUNT = 6;
+export const MAX_ORDEN_COUNT = 32;
 
 /** A single team slot. `pokemonId: null` means the slot is empty. */
 export interface PokemonSlot {
@@ -28,6 +32,10 @@ export interface LobbyState {
   id: LobbyId;
   hostId: PlayerId;
   players: PlayerInfo[];
+  /** Selected main-series game, or null until the lobby host chooses one. */
+  gameVersionId: GameVersionId | null;
+  /** Shared lobby-wide progress; the array length comes from that game's template. */
+  ordenes: boolean[];
   createdAt: number;
 }
 

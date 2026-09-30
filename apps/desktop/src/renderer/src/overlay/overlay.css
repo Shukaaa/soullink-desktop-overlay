@@ -5,20 +5,19 @@ body {
   overflow: hidden;
 }
 
-/* Overlay renders each player's name next to their six-slot row -- kept
-   minimal/transparent, no other UI chrome. */
+/* Keep the overlay minimal: player rows plus the shared Orden list. */
 .overlay-root {
   display: inline-flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
+  gap: var(--overlay-root-gap, 6px);
+  padding: var(--overlay-root-padding, 8px);
   font-family: system-ui, sans-serif;
 }
 
 .overlay-player-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--overlay-player-gap, 8px);
 }
 
 /* Deterministic per-row accent palette (see @soullink/shared getPlayerRowColor),
@@ -59,16 +58,59 @@ body {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
 }
 
+.overlay-orden-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--overlay-orden-gap, 6px);
+  margin-left: var(--overlay-orden-indent, 96px);
+  font-size: var(--overlay-orden-font-size, 11px);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
+
+.overlay-orden-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--overlay-orden-cap-gap, 5px);
+  padding: var(--overlay-orden-padding-y, 4px) var(--overlay-orden-padding-x, 7px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--overlay-cell-radius, 4px);
+  background: rgba(10, 12, 18, 0.55);
+}
+
+.overlay-orden-name {
+  white-space: nowrap;
+}
+
+.overlay-orden-cap {
+  min-width: var(--overlay-orden-cap-min-width, 18px);
+  padding-left: var(--overlay-orden-cap-padding-left, 5px);
+  border-left: 1px solid rgba(255, 255, 255, 0.18);
+  color: #cbd3ff;
+  font-size: var(--overlay-orden-cap-font-size, 10px);
+  font-weight: 700;
+  text-align: center;
+}
+
+.overlay-orden-row .overlay-orden-checked {
+  color: #eaeaf0;
+  border-color: rgba(61, 90, 254, 0.7);
+}
+
+.overlay-orden-row .overlay-orden-unchecked {
+  color: #9aa0ac;
+  opacity: 0.65;
+}
+
 .slot-row {
   display: flex;
-  gap: 6px;
+  gap: var(--overlay-slot-gap, 6px);
 }
 
 .slot-cell {
   box-sizing: border-box;
   width: 32px;
   height: 32px;
-  border-radius: 4px;
+  border-radius: var(--overlay-cell-radius, 4px);
   background: rgba(10, 12, 18, 0.55);
   border: 1px solid var(--row-accent-soft, transparent);
   box-shadow: 0 0 4px 0 var(--row-accent-soft, transparent);

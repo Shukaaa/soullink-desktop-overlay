@@ -61,6 +61,8 @@ function currentSaveFields(ctx: IpcContext): Omit<SaveFile, 'version' | 'id' | '
     selfPlayerId: fields?.selfPlayerId ?? ctx.session.playerId,
     selfToken: ctx.session.token,
     players: fields?.players ?? [],
+    gameVersionId: fields?.gameVersionId ?? null,
+    ordenes: fields?.ordenes ?? [],
     overlaySettings: ctx.getOverlaySettings(),
   };
 }

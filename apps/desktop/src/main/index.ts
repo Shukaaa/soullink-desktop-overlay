@@ -151,6 +151,8 @@ function wireWsClient(): void {
         hostId: null,
         selfPlayerId: null,
         players: [],
+        gameVersionId: null,
+        ordenes: [],
         overlaySettings,
       });
     }

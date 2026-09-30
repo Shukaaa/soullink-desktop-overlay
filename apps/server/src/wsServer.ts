@@ -99,6 +99,12 @@ function handleMessage(ws: WebSocket, raw: string, lobbyManager: LobbyManager): 
       case 'REMOVE_POKEMON':
         lobbyManager.removePokemon(ws, message.slotIndex, message.targetPlayerId);
         break;
+      case 'TOGGLE_ORDEN':
+        lobbyManager.toggleOrden(ws, message.index);
+        break;
+      case 'SET_GAME_VERSION':
+        lobbyManager.setGameVersion(ws, message.gameVersionId);
+        break;
       case 'KICK_PLAYER':
         lobbyManager.kickPlayer(ws, message.playerId);
         break;

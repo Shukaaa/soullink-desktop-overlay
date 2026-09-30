@@ -435,6 +435,7 @@ describe('SaveStateService - overlaySettings persistence & backward compatibilit
     expect(recoveredFromCorruption).toBe(false);
     expect(data.playerName).toBe('Ash');
     expect(data.overlaySettings).toEqual(DEFAULT_OVERLAY_SETTINGS);
+    expect(data.ordenes).toEqual([]);
   });
 
   it('normalizes an invalid/corrupt overlaySettings value instead of rejecting the whole save', () => {

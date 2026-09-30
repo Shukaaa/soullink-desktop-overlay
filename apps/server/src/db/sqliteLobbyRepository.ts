@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
-import { SLOT_COUNT } from '@soullink/shared';
+import { isGameVersionId, MAX_ORDEN_COUNT, SLOT_COUNT } from '@soullink/shared';
 import { initSchema } from './schema';
 import type { LobbyRepository, PersistedLobby, PersistedPlayer } from './lobbyRepository';
 
@@ -9,6 +9,8 @@ interface LobbyRow {
   id: string;
   host_id: string;
   created_at: number;
+  game_version_id: string | null;
+  ordenes_json: string;
 }
 
 interface PlayerRow {
@@ -56,9 +58,13 @@ export class SqliteLobbyRepository implements LobbyRepository {
     initSchema(this.db);
 
     this.upsertLobbyStmt = this.db.prepare(`
-      INSERT INTO lobbies (id, host_id, created_at)
-      VALUES (@id, @hostId, @createdAt)
-      ON CONFLICT(id) DO UPDATE SET host_id = excluded.host_id, created_at = excluded.created_at
+      INSERT INTO lobbies (id, host_id, created_at, game_version_id, ordenes_json)
+      VALUES (@id, @hostId, @createdAt, @gameVersionId, @ordenesJson)
+      ON CONFLICT(id) DO UPDATE SET
+        host_id = excluded.host_id,
+        created_at = excluded.created_at,
+        game_version_id = excluded.game_version_id,
+        ordenes_json = excluded.ordenes_json
     `);
     this.deleteLobbyStmt = this.db.prepare('DELETE FROM lobbies WHERE id = ?');
     this.deletePlayersForLobbyStmt = this.db.prepare('DELETE FROM players WHERE lobby_id = ?');
@@ -69,7 +75,9 @@ export class SqliteLobbyRepository implements LobbyRepository {
     this.insertSlotStmt = this.db.prepare(`
       INSERT INTO slots (player_id, slot_index, pokemon_id) VALUES (@playerId, @slotIndex, @pokemonId)
     `);
-    this.selectLobbiesStmt = this.db.prepare('SELECT id, host_id, created_at FROM lobbies');
+    this.selectLobbiesStmt = this.db.prepare(
+      'SELECT id, host_id, created_at, game_version_id, ordenes_json FROM lobbies'
+    );
     this.selectPlayersStmt = this.db.prepare(
       'SELECT id, lobby_id, name, token, is_host, connected, joined_at, disconnected_at, restored_placeholder FROM players WHERE lobby_id = ? ORDER BY joined_at ASC'
     );
@@ -80,7 +88,13 @@ export class SqliteLobbyRepository implements LobbyRepository {
 
   saveLobby(lobby: PersistedLobby): void {
     const tx = this.db.transaction((l: PersistedLobby) => {
-      this.upsertLobbyStmt.run({ id: l.id, hostId: l.hostId, createdAt: l.createdAt });
+      this.upsertLobbyStmt.run({
+        id: l.id,
+        hostId: l.hostId,
+        createdAt: l.createdAt,
+        gameVersionId: l.gameVersionId,
+        ordenesJson: JSON.stringify(l.ordenes),
+      });
       // Full aggregate replace: simplest way to guarantee players/slots
       // exactly match in-memory state without diffing. Lobbies are small
       // (at most a handful of players), so this is cheap.
@@ -143,9 +157,17 @@ export class SqliteLobbyRepository implements LobbyRepository {
       id: lobbyRow.id,
       hostId: lobbyRow.host_id,
       createdAt: lobbyRow.created_at,
+      gameVersionId: isGameVersionId(lobbyRow.game_version_id) ? lobbyRow.game_version_id : null,
+      ordenes: normalizeOrdenes(lobbyRow.ordenes_json),
       players,
     };
   }
+}
+
+function normalizeOrdenes(json: string): boolean[] {
+  const parsed: unknown = JSON.parse(json);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.slice(0, MAX_ORDEN_COUNT).map((value) => value === true);
 }
 
 function normalizeSlots(slotRows: SlotRow[]): { pokemonId: number | null }[] {

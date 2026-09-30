@@ -20,7 +20,7 @@ function loadPage(win: BrowserWindow, page: 'index' | 'overlay'): void {
 
 export function createControlWindow(preloadPath: string): BrowserWindow {
   const win = new BrowserWindow({
-    width: 480,
+    width: 580,
     height: 720,
     minWidth: 360,
     minHeight: 480,

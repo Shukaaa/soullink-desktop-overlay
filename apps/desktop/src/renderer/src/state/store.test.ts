@@ -18,6 +18,8 @@ const lobbyState: LobbyState = {
   id: 'ABC123',
   hostId: 'p1',
   players: [{ id: 'p1', name: 'Ash', isHost: true, connected: true, slots: emptySlots() }],
+  gameVersionId: null,
+  ordenes: [],
   createdAt: Date.now(),
 };
 

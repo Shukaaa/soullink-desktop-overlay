@@ -5,14 +5,17 @@
 // in the renderer build.
 
 export type { PlayerId, LobbyId, PokemonSlot, PlayerInfo, LobbyState } from './types';
+export type { GameVersionId } from './gameVersions';
 export {
   SLOT_COUNT,
+  MAX_ORDEN_COUNT,
   MAX_NAME_LENGTH,
   DEFAULT_MAX_PLAYERS_PER_LOBBY,
   RECONNECT_GRACE_MS,
   EMPTY_LOBBY_TTL_MS,
   emptySlots,
 } from './types';
+export { GAME_VERSION_GROUPS, isGameVersionId, getGameVersion, normalizeOrdenProgress } from './gameVersions';
 
 export {
   pokemonSlotSchema,
@@ -21,6 +24,8 @@ export {
   JoinLobbyMessage,
   SetPokemonMessage,
   RemovePokemonMessage,
+  ToggleOrdenMessage,
+  SetGameVersionMessage,
   KickPlayerMessage,
   LeaveLobbyMessage,
   RestoreLobbyStateMessage,

@@ -14,13 +14,11 @@ export interface LoadResult {
   recoveredFromCorruption: boolean;
 }
 
-/** Fields required to create/update a manual save. `overlaySettings` is
- * optional here (unlike the rest of `SaveFile`) so callers that don't care
- * about overlay settings -- notably existing tests -- aren't forced to pass
- * them; the schema defaults it the same way it does for an old save file
- * that never had the field at all. */
-export type SaveFileInput = Partial<Pick<SaveFile, 'overlaySettings'>> &
-  Omit<SaveFile, 'version' | 'id' | 'name' | 'updatedAt' | 'overlaySettings'>;
+/** Fields required to create/update a manual save. `overlaySettings` and
+ * `ordenes` are optional so callers that don't need them aren't forced to
+ * pass them; the schema supplies defaults for omitted fields. */
+export type SaveFileInput = Partial<Pick<SaveFile, 'overlaySettings' | 'gameVersionId' | 'ordenes'>> &
+  Omit<SaveFile, 'version' | 'id' | 'name' | 'updatedAt' | 'overlaySettings' | 'gameVersionId' | 'ordenes'>;
 
 const DEFAULT_AUTOSAVE_DEBOUNCE_MS = 2000;
 const AUTOSAVE_ID = 'autosave';

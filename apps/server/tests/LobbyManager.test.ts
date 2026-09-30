@@ -139,4 +139,27 @@ describe('LobbyManager - Pokemon slots', () => {
     const strangerWs = fakeWs();
     expect(() => manager.setPokemon(strangerWs, 0, 25)).toThrowError(/join a lobby/i);
   });
+
+  it('shares game-version template progress across all lobby members and resets it on version changes', () => {
+    manager.setGameVersion(hostWs, 'red');
+    expect(lastState(hostWs).ordenes).toHaveLength(8);
+    manager.toggleOrden(joinerWs, 1);
+
+    expect(lastState(hostWs).ordenes[1]).toBe(true);
+    expect(lastState(joinerWs).ordenes[1]).toBe(true);
+
+    manager.setGameVersion(hostWs, 'heartgold');
+    expect(lastState(joinerWs).gameVersionId).toBe('heartgold');
+    expect(lastState(joinerWs).ordenes).toHaveLength(16);
+    expect(lastState(joinerWs).ordenes.every((checked) => !checked)).toBe(true);
+  });
+
+  it('requires a selected game version and rejects unauthorized or out-of-range changes', () => {
+    expect(() => manager.toggleOrden(hostWs, 0)).toThrowError(/choose a game version/i);
+    manager.setGameVersion(hostWs, 'red');
+    expect(() => manager.toggleOrden(hostWs, 8)).toThrowError(/orden index/i);
+    expect(() => manager.setGameVersion(joinerWs, 'blue')).toThrowError(/host/i);
+    manager.setGameVersion(hostWs, 'legends-arceus');
+    expect(() => manager.toggleOrden(hostWs, 0)).toThrowError(/orden index/i);
+  });
 });

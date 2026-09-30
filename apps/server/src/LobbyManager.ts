@@ -4,6 +4,9 @@ import {
   DEFAULT_MAX_PLAYERS_PER_LOBBY,
   EMPTY_LOBBY_TTL_MS,
   ErrorCode,
+  getGameVersion,
+  GameVersionId,
+  isGameVersionId,
   LobbyState,
   MAX_NAME_LENGTH,
   PlayerInfo,
@@ -14,6 +17,7 @@ import {
   SLOT_COUNT,
   emptySlots,
   isValidSpeciesId,
+  normalizeOrdenProgress,
 } from '@soullink/shared';
 import { NullLobbyRepository } from './db/lobbyRepository';
 import type { LobbyRepository, PersistedLobby, PersistedPlayer } from './db/lobbyRepository';
@@ -42,6 +46,8 @@ interface LobbyRecord {
   id: string;
   hostId: string;
   createdAt: number;
+  gameVersionId: GameVersionId | null;
+  ordenes: boolean[];
   players: Map<string, PlayerRecord>;
   emptyTimer: NodeJS.Timeout | null;
 }
@@ -155,6 +161,8 @@ export class LobbyManager {
       id: lobbyId,
       hostId: playerId,
       createdAt: Date.now(),
+      gameVersionId: null,
+      ordenes: [],
       players: new Map([[playerId, player]]),
       emptyTimer: null,
     };
@@ -280,6 +288,39 @@ export class LobbyManager {
       targetPlayerId: target.id,
       slotIndex,
     });
+  }
+
+  setGameVersion(ws: WebSocket, gameVersionId: GameVersionId): void {
+    const { lobby, player } = this.requireConnection(ws);
+    if (!isGameVersionId(gameVersionId)) {
+      throw new ProtocolError(ErrorCode.INVALID_MESSAGE, 'Unknown game version.');
+    }
+    this.requireHost(player);
+    if (lobby.gameVersionId === gameVersionId) return;
+    lobby.gameVersionId = gameVersionId;
+    lobby.ordenes = normalizeOrdenProgress(gameVersionId, []);
+    this.persist(lobby);
+    this.broadcastState(lobby);
+    logger.info('Game version changed', {
+      lobbyId: lobby.id,
+      playerId: player.id,
+      gameVersionId,
+      ordenCount: getGameVersion(gameVersionId).count,
+    });
+  }
+
+  toggleOrden(ws: WebSocket, index: number): void {
+    const { lobby, player } = this.requireConnection(ws);
+    if (!lobby.gameVersionId) {
+      throw new ProtocolError(ErrorCode.INVALID_MESSAGE, 'Choose a game version before tracking Orden progress.');
+    }
+    if (!Number.isInteger(index) || index < 0 || index >= lobby.ordenes.length) {
+      throw new ProtocolError(ErrorCode.INVALID_MESSAGE, 'Orden index is outside the configured range.');
+    }
+    lobby.ordenes[index] = !lobby.ordenes[index];
+    this.persist(lobby);
+    this.broadcastState(lobby);
+    logger.info('Orden toggled', { lobbyId: lobby.id, playerId: player.id, index });
   }
 
   kickPlayer(ws: WebSocket, targetPlayerId: string): void {
@@ -430,6 +471,8 @@ export class LobbyManager {
       id: lobbyId,
       hostId: players.has(snapshot.hostId) ? snapshot.hostId : msg.playerId,
       createdAt: Date.now(),
+      gameVersionId: snapshot.gameVersionId ?? null,
+      ordenes: normalizeOrdenProgress(snapshot.gameVersionId ?? null, snapshot.ordenes ?? []),
       players,
       emptyTimer: null,
     };
@@ -587,7 +630,14 @@ export class LobbyManager {
         slots: p.slots.map((slot) => ({ ...slot })),
       }));
 
-    return { id: lobby.id, hostId: lobby.hostId, players, createdAt: lobby.createdAt };
+    return {
+      id: lobby.id,
+      hostId: lobby.hostId,
+      players,
+      gameVersionId: lobby.gameVersionId,
+      ordenes: [...lobby.ordenes],
+      createdAt: lobby.createdAt,
+    };
   }
 
   /** Converts live in-memory state to the plain-data shape persisted by `repository`. */
@@ -603,7 +653,14 @@ export class LobbyManager {
       restoredPlaceholder: p.restoredPlaceholder,
       slots: p.slots.map((slot) => ({ ...slot })),
     }));
-    return { id: lobby.id, hostId: lobby.hostId, createdAt: lobby.createdAt, players };
+    return {
+      id: lobby.id,
+      hostId: lobby.hostId,
+      createdAt: lobby.createdAt,
+      gameVersionId: lobby.gameVersionId,
+      ordenes: [...lobby.ordenes],
+      players,
+    };
   }
 
   /** Persists the full current state of one lobby transactionally. */
@@ -662,6 +719,11 @@ export class LobbyManager {
       id: persisted.id,
       hostId,
       createdAt: persisted.createdAt,
+      gameVersionId: isGameVersionId(persisted.gameVersionId) ? persisted.gameVersionId : null,
+      ordenes: normalizeOrdenProgress(
+        isGameVersionId(persisted.gameVersionId) ? persisted.gameVersionId : null,
+        persisted.ordenes
+      ),
       players,
       emptyTimer: null,
     };

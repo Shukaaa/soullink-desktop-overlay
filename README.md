@@ -11,6 +11,16 @@ Every player has exactly **six `PokemonSlot`s** (one per team slot). There is no
 route/Encounter/SoulLink entity: a "SoulLink" is simply the same slot index lined up
 across every player, computed purely by position wherever it's displayed.
 
+The lobby host selects the Pokémon game version. The matching shared progress
+template (for example, eight Orden in Kanto or four Große Prüfungen in Alola)
+shows localized badge names and level caps in the control panel and overlay.
+Caps use the highest level on the corresponding Gym Leader's main-story team
+(or the Kahuna's Great Trial team in Alola), a common Nuzlocke rule rather than
+an official universal standard. Paldea's caps follow the recommended Gym order;
+those Gyms can be challenged in any order. Progress is preserved with lobby
+save files, and changing the game version resets it. Black 2/White 2 caps use
+Normal Mode; Easy and Challenge Modes have different team levels.
+
 ## Monorepo layout
 
 ```

@@ -1,5 +1,7 @@
 import { z } from 'zod';
-import { MAX_NAME_LENGTH, SLOT_COUNT } from './types';
+import { isGameVersionId } from './gameVersions';
+import type { GameVersionId } from './gameVersions';
+import { MAX_NAME_LENGTH, MAX_ORDEN_COUNT, SLOT_COUNT } from './types';
 
 /**
  * Sanity upper bound on how many players a RESTORE_LOBBY_STATE snapshot may
@@ -77,6 +79,18 @@ export const RemovePokemonMessage = z.object({
 });
 export type RemovePokemonMessage = z.infer<typeof RemovePokemonMessage>;
 
+export const ToggleOrdenMessage = z.object({
+  type: z.literal('TOGGLE_ORDEN'),
+  index: z.number().int().min(0).max(MAX_ORDEN_COUNT - 1),
+});
+export type ToggleOrdenMessage = z.infer<typeof ToggleOrdenMessage>;
+
+export const SetGameVersionMessage = z.object({
+  type: z.literal('SET_GAME_VERSION'),
+  gameVersionId: z.string().refine((value): value is GameVersionId => isGameVersionId(value)),
+});
+export type SetGameVersionMessage = z.infer<typeof SetGameVersionMessage>;
+
 export const KickPlayerMessage = z.object({
   type: z.literal('KICK_PLAYER'),
   playerId: idString,
@@ -104,6 +118,12 @@ export const RestoreLobbyStateMessage = z.object({
     .object({
       hostId: idString,
       players: z.array(playerSnapshotSchema).min(1).max(MAX_SNAPSHOT_PLAYERS),
+      gameVersionId: z
+        .string()
+        .refine((value): value is GameVersionId => isGameVersionId(value))
+        .nullable()
+        .optional(),
+      ordenes: z.array(z.boolean()).max(MAX_ORDEN_COUNT).optional(),
     })
     .optional(),
 });
@@ -114,6 +134,8 @@ export const ClientMessage = z.discriminatedUnion('type', [
   JoinLobbyMessage,
   SetPokemonMessage,
   RemovePokemonMessage,
+  ToggleOrdenMessage,
+  SetGameVersionMessage,
   KickPlayerMessage,
   LeaveLobbyMessage,
   RestoreLobbyStateMessage,
