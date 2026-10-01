@@ -24,7 +24,7 @@ Normal Mode; Easy and Challenge Modes have different team levels.
 ## Monorepo layout
 
 ```
-packages/shared     Shared protocol types, zod validation, error codes, and a static Gen I-IV pokedex
+packages/shared     Shared protocol types, zod validation, error codes, and a static Gen I-V pokedex
 apps/server          Authoritative WebSocket server
 apps/desktop         Electron + Vite + React desktop client
 ```

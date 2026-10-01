@@ -217,8 +217,11 @@ describe('pokedex', () => {
     expect(isValidSpeciesId(999999)).toBe(false);
   });
 
-  it('contains the full Gen I-IV range', () => {
-    expect(isValidSpeciesId(493)).toBe(true);
+  it('contains the full Gen I-V range', () => {
+    expect(isValidSpeciesId(494)).toBe(true);
+    expect(getPokemonById(495)?.nameDe).toBe('Serpifeu');
+    expect(getPokemonById(649)?.name).toBe('Genesect');
+    expect(searchPokedex('Serpifeu').map((pokemon) => pokemon.id)).toContain(495);
   });
 
   it('builds a deterministic sprite url', () => {
@@ -228,8 +231,8 @@ describe('pokedex', () => {
 
 describe('searchPokedex', () => {
   it('returns everything for an empty query', () => {
-    expect(searchPokedex('')).toHaveLength(493);
-    expect(searchPokedex('   ')).toHaveLength(493);
+    expect(searchPokedex('')).toHaveLength(649);
+    expect(searchPokedex('   ')).toHaveLength(649);
   });
 
   it('matches on the English name', () => {
