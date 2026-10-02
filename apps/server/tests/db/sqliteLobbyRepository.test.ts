@@ -69,7 +69,7 @@ describe('SqliteLobbyRepository', () => {
         .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         .all()
         .map((r: any) => r.name);
-      expect(tables).toEqual(expect.arrayContaining(['lobbies', 'players', 'slots']));
+      expect(tables).toEqual(expect.arrayContaining(['lobbies', 'players', 'slots', 'discord_users', 'discord_sessions']));
     } finally {
       raw.close();
     }
@@ -107,9 +107,25 @@ describe('SqliteLobbyRepository', () => {
     const lobby = sampleLobby({
       gameVersionId: 'red',
       ordenes: [true, false, true],
+      ownerUserId: 'discord-owner',
+      updatedAt: 2000,
       players: [
-        samplePlayer({ id: 'p1', isHost: true, slots: [{ pokemonId: 25 }, ...Array.from({ length: 5 }, () => ({ pokemonId: null }))] }),
-        samplePlayer({ id: 'p2', name: 'Misty', token: 'token-2', isHost: false, connected: false, disconnectedAt: 2000 }),
+        samplePlayer({
+          id: 'p1',
+          userId: 'discord-owner',
+          isHost: true,
+          slots: [{ pokemonId: 25 }, ...Array.from({ length: 5 }, () => ({ pokemonId: null }))],
+        }),
+        samplePlayer({
+          id: 'p2',
+          userId: 'discord-member',
+          name: 'Misty',
+          token: 'token-2',
+          isHost: false,
+          connected: false,
+          kicked: true,
+          disconnectedAt: 2000,
+        }),
       ],
     });
     repo.saveLobby(lobby);
@@ -117,6 +133,8 @@ describe('SqliteLobbyRepository', () => {
     const [loaded] = repo.loadAll();
     expect(loaded.hostId).toBe('player-1');
     expect(loaded.gameVersionId).toBe('red');
+    expect(loaded.ownerUserId).toBe('discord-owner');
+    expect(loaded.updatedAt).toBe(2000);
     expect(loaded.ordenes).toEqual([true, false, true]);
     expect(loaded.players).toHaveLength(2);
     const p1 = loaded.players.find((p) => p.id === 'p1')!;
@@ -127,6 +145,17 @@ describe('SqliteLobbyRepository', () => {
     expect(p2.connected).toBe(false);
     expect(p2.disconnectedAt).toBe(2000);
     expect(p2.token).toBe('token-2');
+    expect(p2.userId).toBe('discord-member');
+    expect(p2.kicked).toBe(true);
+  });
+
+  it('persists Discord users with hashed sessions', () => {
+    ({ dir, dbPath } = makeTempDbPath());
+    repo = new SqliteLobbyRepository(dbPath);
+    repo.saveDiscordSession({ id: 'discord-1', username: 'Ash' }, 'sha256-token-hash');
+
+    expect(repo.findDiscordUserByTokenHash('sha256-token-hash')).toEqual({ id: 'discord-1', username: 'Ash' });
+    expect(repo.findDiscordUserByTokenHash('raw-token')).toBeNull();
   });
 
   it('deleteLobby removes the lobby and cascades to its players and slots', () => {

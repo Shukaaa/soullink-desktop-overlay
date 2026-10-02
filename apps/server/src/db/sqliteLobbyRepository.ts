@@ -4,6 +4,7 @@ import Database from 'better-sqlite3';
 import { isGameVersionId, MAX_ORDEN_COUNT, SLOT_COUNT } from '@soullink/shared';
 import { initSchema } from './schema';
 import type { LobbyRepository, PersistedLobby, PersistedPlayer } from './lobbyRepository';
+import type { DiscordUser } from './lobbyRepository';
 
 interface LobbyRow {
   id: string;
@@ -11,6 +12,8 @@ interface LobbyRow {
   created_at: number;
   game_version_id: string | null;
   ordenes_json: string;
+  owner_user_id: string | null;
+  updated_at: number;
 }
 
 interface PlayerRow {
@@ -23,6 +26,8 @@ interface PlayerRow {
   joined_at: number;
   disconnected_at: number | null;
   restored_placeholder: number;
+  user_id: string | null;
+  kicked: number;
 }
 
 interface SlotRow {
@@ -51,6 +56,9 @@ export class SqliteLobbyRepository implements LobbyRepository {
   private readonly selectLobbiesStmt;
   private readonly selectPlayersStmt;
   private readonly selectSlotsStmt;
+  private readonly upsertDiscordUserStmt;
+  private readonly insertDiscordSessionStmt;
+  private readonly findDiscordUserByTokenHashStmt;
 
   constructor(dbPath: string) {
     ensureDirectoryFor(dbPath);
@@ -58,32 +66,47 @@ export class SqliteLobbyRepository implements LobbyRepository {
     initSchema(this.db);
 
     this.upsertLobbyStmt = this.db.prepare(`
-      INSERT INTO lobbies (id, host_id, created_at, game_version_id, ordenes_json)
-      VALUES (@id, @hostId, @createdAt, @gameVersionId, @ordenesJson)
+      INSERT INTO lobbies (id, host_id, created_at, game_version_id, ordenes_json, owner_user_id, updated_at)
+      VALUES (@id, @hostId, @createdAt, @gameVersionId, @ordenesJson, @ownerUserId, @updatedAt)
       ON CONFLICT(id) DO UPDATE SET
         host_id = excluded.host_id,
         created_at = excluded.created_at,
         game_version_id = excluded.game_version_id,
-        ordenes_json = excluded.ordenes_json
+        ordenes_json = excluded.ordenes_json,
+        owner_user_id = excluded.owner_user_id,
+        updated_at = excluded.updated_at
     `);
     this.deleteLobbyStmt = this.db.prepare('DELETE FROM lobbies WHERE id = ?');
     this.deletePlayersForLobbyStmt = this.db.prepare('DELETE FROM players WHERE lobby_id = ?');
     this.insertPlayerStmt = this.db.prepare(`
-      INSERT INTO players (id, lobby_id, name, token, is_host, connected, joined_at, disconnected_at, restored_placeholder)
-      VALUES (@id, @lobbyId, @name, @token, @isHost, @connected, @joinedAt, @disconnectedAt, @restoredPlaceholder)
+      INSERT INTO players (id, lobby_id, name, token, is_host, connected, joined_at, disconnected_at, restored_placeholder, user_id, kicked)
+      VALUES (@id, @lobbyId, @name, @token, @isHost, @connected, @joinedAt, @disconnectedAt, @restoredPlaceholder, @userId, @kicked)
     `);
     this.insertSlotStmt = this.db.prepare(`
       INSERT INTO slots (player_id, slot_index, pokemon_id) VALUES (@playerId, @slotIndex, @pokemonId)
     `);
     this.selectLobbiesStmt = this.db.prepare(
-      'SELECT id, host_id, created_at, game_version_id, ordenes_json FROM lobbies'
+      'SELECT id, host_id, created_at, game_version_id, ordenes_json, owner_user_id, updated_at FROM lobbies'
     );
     this.selectPlayersStmt = this.db.prepare(
-      'SELECT id, lobby_id, name, token, is_host, connected, joined_at, disconnected_at, restored_placeholder FROM players WHERE lobby_id = ? ORDER BY joined_at ASC'
+      'SELECT id, lobby_id, name, token, is_host, connected, joined_at, disconnected_at, restored_placeholder, user_id, kicked FROM players WHERE lobby_id = ? ORDER BY joined_at ASC'
     );
     this.selectSlotsStmt = this.db.prepare(
       'SELECT player_id, slot_index, pokemon_id FROM slots WHERE player_id = ? ORDER BY slot_index ASC'
     );
+    this.upsertDiscordUserStmt = this.db.prepare(`
+      INSERT INTO discord_users (id, username, updated_at) VALUES (@id, @username, @updatedAt)
+      ON CONFLICT(id) DO UPDATE SET username = excluded.username, updated_at = excluded.updated_at
+    `);
+    this.insertDiscordSessionStmt = this.db.prepare(
+      'INSERT INTO discord_sessions (token_hash, discord_user_id, created_at) VALUES (?, ?, ?)'
+    );
+    this.findDiscordUserByTokenHashStmt = this.db.prepare(`
+      SELECT discord_users.id, discord_users.username
+      FROM discord_sessions
+      JOIN discord_users ON discord_users.id = discord_sessions.discord_user_id
+      WHERE discord_sessions.token_hash = ?
+    `);
   }
 
   saveLobby(lobby: PersistedLobby): void {
@@ -94,6 +117,8 @@ export class SqliteLobbyRepository implements LobbyRepository {
         createdAt: l.createdAt,
         gameVersionId: l.gameVersionId,
         ordenesJson: JSON.stringify(l.ordenes),
+        ownerUserId: l.ownerUserId ?? null,
+        updatedAt: l.updatedAt ?? l.createdAt,
       });
       // Full aggregate replace: simplest way to guarantee players/slots
       // exactly match in-memory state without diffing. Lobbies are small
@@ -110,6 +135,8 @@ export class SqliteLobbyRepository implements LobbyRepository {
           joinedAt: player.joinedAt,
           disconnectedAt: player.disconnectedAt,
           restoredPlaceholder: player.restoredPlaceholder ? 1 : 0,
+          userId: player.userId ?? null,
+          kicked: player.kicked ? 1 : 0,
         });
         for (let slotIndex = 0; slotIndex < player.slots.length; slotIndex++) {
           this.insertSlotStmt.run({
@@ -121,6 +148,18 @@ export class SqliteLobbyRepository implements LobbyRepository {
       }
     });
     tx(lobby);
+  }
+
+  saveDiscordSession(user: DiscordUser, tokenHash: string): void {
+    const tx = this.db.transaction(() => {
+      this.upsertDiscordUserStmt.run({ ...user, updatedAt: Date.now() });
+      this.insertDiscordSessionStmt.run(tokenHash, user.id, Date.now());
+    });
+    tx();
+  }
+
+  findDiscordUserByTokenHash(tokenHash: string): DiscordUser | null {
+    return (this.findDiscordUserByTokenHashStmt.get(tokenHash) as DiscordUser | undefined) ?? null;
   }
 
   deleteLobby(lobbyId: string): void {
@@ -150,6 +189,8 @@ export class SqliteLobbyRepository implements LobbyRepository {
         joinedAt: playerRow.joined_at,
         disconnectedAt: playerRow.disconnected_at,
         restoredPlaceholder: playerRow.restored_placeholder === 1,
+        userId: playerRow.user_id,
+        kicked: playerRow.kicked === 1,
         slots,
       };
     });
@@ -159,6 +200,8 @@ export class SqliteLobbyRepository implements LobbyRepository {
       createdAt: lobbyRow.created_at,
       gameVersionId: isGameVersionId(lobbyRow.game_version_id) ? lobbyRow.game_version_id : null,
       ordenes: normalizeOrdenes(lobbyRow.ordenes_json),
+      ownerUserId: lobbyRow.owner_user_id,
+      updatedAt: lobbyRow.updated_at,
       players,
     };
   }

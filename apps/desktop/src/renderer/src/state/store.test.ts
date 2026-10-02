@@ -8,6 +8,8 @@ const baseState: AppState = {
   error: null,
   lobby: null,
   selfPlayerId: null,
+  discordUser: null,
+  ownedLobbies: [],
   reconnectInfo: null,
   overlaySettings: DEFAULT_OVERLAY_SETTINGS,
 };
@@ -50,7 +52,7 @@ describe('reduceWsEvent', () => {
       { ...baseState, connectionStatus: 'reconnecting', reconnectInfo: { attempt: 3, delayMs: 5000 } },
       { kind: 'close' }
     );
-    expect(result).toEqual({ connectionStatus: 'closed', reconnectInfo: null });
+    expect(result).toEqual({ connectionStatus: 'closed', reconnectInfo: null, ownedLobbies: [] });
   });
 
   it('records client errors without touching connection status', () => {
@@ -64,6 +66,25 @@ describe('reduceWsEvent', () => {
       message: { type: 'STATE', state: lobbyState, self: { playerId: 'p1', token: 't1' } },
     });
     expect(result).toEqual({ lobby: lobbyState, selfPlayerId: 'p1', error: null });
+  });
+
+  it('stores the authenticated Discord identity and owned-lobby list', () => {
+    const user = { id: 'discord-1', username: 'Ash' };
+    const lobbies = [{
+      id: 'ABC123',
+      createdAt: 1,
+      updatedAt: 2,
+      gameVersionId: null,
+      playerCount: 1,
+      connectedPlayerCount: 1,
+      players: [{ id: 'p1', name: 'Ash', connected: true }],
+    }];
+    expect(
+      reduceWsEvent(baseState, { kind: 'server-message', message: { type: 'AUTHENTICATED', user } })
+    ).toEqual({ discordUser: user, lobby: null, selfPlayerId: null, error: null });
+    expect(
+      reduceWsEvent(baseState, { kind: 'server-message', message: { type: 'OWNED_LOBBIES', lobbies } })
+    ).toEqual({ ownedLobbies: lobbies });
   });
 
   it('applies a STATE message without self identity (a broadcast update)', () => {

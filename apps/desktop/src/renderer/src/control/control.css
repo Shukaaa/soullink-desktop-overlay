@@ -208,6 +208,56 @@ button:disabled {
   letter-spacing: 0.08em;
 }
 
+.owned-lobbies {
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid #33384a;
+  border-radius: 8px;
+  background: #1b1d24;
+}
+
+.owned-lobbies h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.owned-lobby-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.owned-lobby-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #33384a;
+}
+
+.owned-lobby-info {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  font-size: 11px;
+  color: #9aa0ac;
+}
+
+.owned-lobby-info code {
+  color: #eaeaf0;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+.owned-lobby-row .button-row {
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
 .orden-panel {
   margin: 10px 0 12px;
   padding: 10px;

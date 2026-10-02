@@ -27,6 +27,29 @@ const idString = z.string().trim().min(1).max(64);
 const slotIndex = z.number().int().min(0).max(SLOT_COUNT - 1);
 const pokemonId = z.number().int().positive();
 
+export const AuthenticateMessage = z.object({
+  type: z.literal('AUTHENTICATE'),
+  token: z.string().min(32).max(256),
+});
+export type AuthenticateMessage = z.infer<typeof AuthenticateMessage>;
+
+export const ListOwnedLobbiesMessage = z.object({
+  type: z.literal('LIST_OWNED_LOBBIES'),
+});
+export type ListOwnedLobbiesMessage = z.infer<typeof ListOwnedLobbiesMessage>;
+
+export const RejoinOwnedLobbyMessage = z.object({
+  type: z.literal('REJOIN_OWNED_LOBBY'),
+  lobbyId: idString.max(64),
+});
+export type RejoinOwnedLobbyMessage = z.infer<typeof RejoinOwnedLobbyMessage>;
+
+export const DeleteOwnedLobbyMessage = z.object({
+  type: z.literal('DELETE_OWNED_LOBBY'),
+  lobbyId: idString.max(64),
+});
+export type DeleteOwnedLobbyMessage = z.infer<typeof DeleteOwnedLobbyMessage>;
+
 export const pokemonSlotSchema = z.object({
   pokemonId: pokemonId.nullable(),
 });
@@ -47,14 +70,14 @@ export type PlayerSnapshot = z.infer<typeof playerSnapshotSchema>;
 
 export const CreateLobbyMessage = z.object({
   type: z.literal('CREATE_LOBBY'),
-  name: trimmedName,
+  name: trimmedName.optional(),
 });
 export type CreateLobbyMessage = z.infer<typeof CreateLobbyMessage>;
 
 export const JoinLobbyMessage = z.object({
   type: z.literal('JOIN_LOBBY'),
   lobbyId: idString.max(64),
-  name: trimmedName,
+  name: trimmedName.optional(),
 });
 export type JoinLobbyMessage = z.infer<typeof JoinLobbyMessage>;
 
@@ -103,11 +126,9 @@ export const LeaveLobbyMessage = z.object({
 export type LeaveLobbyMessage = z.infer<typeof LeaveLobbyMessage>;
 
 /**
- * Restores a session. If `lobbyId`/`playerId`/`token` still match a live
- * lobby on the server this behaves like a plain reconnect. Otherwise (e.g.
- * the server restarted and lost its in-memory state) the optional
- * `snapshot` is used to recreate the lobby from the client's last known
- * state, subject to server-side player-count/slot validation.
+ * Legacy local-save message shape. Authenticated Discord sessions only
+ * reconnect to rows already persisted by the server; their client snapshots
+ * are not accepted as lobby state.
  */
 export const RestoreLobbyStateMessage = z.object({
   type: z.literal('RESTORE_LOBBY_STATE'),
@@ -130,6 +151,10 @@ export const RestoreLobbyStateMessage = z.object({
 export type RestoreLobbyStateMessage = z.infer<typeof RestoreLobbyStateMessage>;
 
 export const ClientMessage = z.discriminatedUnion('type', [
+  AuthenticateMessage,
+  ListOwnedLobbiesMessage,
+  RejoinOwnedLobbyMessage,
+  DeleteOwnedLobbyMessage,
   CreateLobbyMessage,
   JoinLobbyMessage,
   SetPokemonMessage,
@@ -179,9 +204,34 @@ export interface LeftLobbyMessage {
   lobbyId?: string;
 }
 
+export interface AuthenticatedMessage {
+  type: 'AUTHENTICATED';
+  user: { id: string; username: string };
+}
+
+export interface OwnedLobbySummary {
+  id: string;
+  createdAt: number;
+  updatedAt: number;
+  gameVersionId: import('./types').LobbyState['gameVersionId'];
+  playerCount: number;
+  connectedPlayerCount: number;
+  players: Array<{ id: string; name: string; connected: boolean }>;
+}
+
+export interface OwnedLobbiesMessage {
+  type: 'OWNED_LOBBIES';
+  lobbies: OwnedLobbySummary[];
+}
+
 /**
  * Coarse, non-identifying summary of one lobby: enough for a host to
  * recognize/manage a lobby they created without exposing player names or
  * chosen species to whoever asked for the list.
  */
-export type ServerMessage = StateMessage | ErrorMessage | LeftLobbyMessage;
+export type ServerMessage =
+  | StateMessage
+  | ErrorMessage
+  | LeftLobbyMessage
+  | AuthenticatedMessage
+  | OwnedLobbiesMessage;

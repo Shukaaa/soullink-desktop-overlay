@@ -52,6 +52,32 @@ describe('WsClient', () => {
     client.dispose();
   });
 
+  it('closes a previous connection before opening a replacement socket', async () => {
+    let connectionCount = 0;
+    let closeFirstConnection!: () => void;
+    const firstClosed = new Promise<void>((resolve) => {
+      closeFirstConnection = resolve;
+    });
+    wss.on('connection', (ws) => {
+      connectionCount++;
+      if (connectionCount === 1) ws.once('close', closeFirstConnection);
+    });
+
+    const client = new WsClient();
+    const firstOpen = new Promise<void>((resolve) => client.once('open', resolve));
+    client.connect(url);
+    await firstOpen;
+
+    const secondOpen = new Promise<void>((resolve) => client.once('open', resolve));
+    client.connect(url);
+    await secondOpen;
+    await firstClosed;
+
+    expect(connectionCount).toBe(2);
+    expect(wss.clients.size).toBe(1);
+    client.dispose();
+  });
+
   it('reconnects automatically after the server drops the connection', async () => {
     let connectionCount = 0;
     wss.on('connection', (ws) => {
@@ -80,6 +106,15 @@ describe('WsClient', () => {
   it('reports isConnected false before connecting', () => {
     const client = new WsClient();
     expect(client.isConnected).toBe(false);
+    client.dispose();
+  });
+
+  it('emits close when a pending connection is cancelled before the socket starts', () => {
+    const client = new WsClient();
+    let closeCount = 0;
+    client.on('close', () => closeCount++);
+    client.disconnect();
+    expect(closeCount).toBe(1);
     client.dispose();
   });
 

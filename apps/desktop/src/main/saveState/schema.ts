@@ -47,10 +47,10 @@ export const overlaySettingsSchema = z.preprocess(
 
 /**
  * Shape of a save file persisted under `app.getPath('userData')/saves`. This
- * is a full snapshot of the last known lobby (every player's exactly-six
- * PokemonSlots, not just the local player's), so it can both be displayed as
- * save history and be replayed to the server via RESTORE_LOBBY_STATE after a
- * crash/restart wipes the server's in-memory state.
+ * is a full local snapshot of the last known lobby (every player's
+ * exactly-six PokemonSlots, not just the local player's). It remains
+ * available as a manual backup; authenticated clients recover authoritative
+ * lobby state from the server's SQLite database instead of replaying it.
  */
 export const saveFileSchema = z.object({
   version: z.literal(SAVE_FILE_VERSION),

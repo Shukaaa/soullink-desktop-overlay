@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, Menu, Tray, type MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, globalShortcut, Menu, safeStorage, Tray, type MenuItemConstructorOptions } from 'electron';
 import { join } from 'node:path';
 import type { LobbyState, OverlaySettings, RestoreLobbyStateMessage, ServerMessage } from '@soullink/shared';
 import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@soullink/shared';
@@ -6,10 +6,11 @@ import { APP_ICON_PATH, createControlWindow, createOverlayWindow, repositionOver
 import { WsClient } from './wsClient';
 import { SaveStateService } from './saveState/SaveStateService';
 import { registerIpcHandlers, type SessionState } from './ipcHandlers';
-import { decideOpenMessage, deriveSaveLobbyFields } from './restore';
+import { deriveSaveLobbyFields } from './restore';
 import { IpcChannel, type WsEvent } from '../common/ipc';
 import type { UpdaterEvent } from '../common/updaterTypes';
 import { initUpdater } from './updater';
+import { DiscordSessionStore } from './discordSessionStore';
 
 const CLICK_THROUGH_SHORTCUT = 'CommandOrControl+Shift+O';
 const UPDATE_CHECK_STARTUP_DELAY_MS = 5000;
@@ -27,12 +28,15 @@ let isQuitting = false;
 
 const wsClient = new WsClient();
 const saveStateService = new SaveStateService(app.getPath('userData'));
+const discordSessionStore = new DiscordSessionStore(app.getPath('userData'), safeStorage);
 const session: SessionState = {
   playerId: null,
   lobbyId: null,
   token: null,
   playerName: null,
   serverUrl: null,
+  discordToken: null,
+  discordUserId: null,
 };
 
 function broadcast(event: WsEvent): void {
@@ -93,16 +97,12 @@ function wireWsClient(): void {
   });
 
   wsClient.on('open', () => {
-    broadcast({ kind: 'open' });
-    // Explicit pending restores (manual save "Load") always win; otherwise a
-    // live in-memory session gets a plain reconnect. Cold starts intentionally
-    // send nothing -- lobbies are temporary and are never auto-rejoined just
-    // because an autosave file exists (see decideOpenMessage).
-    const message = decideOpenMessage(pendingRestore, session);
-    pendingRestore = null;
-    if (message) {
-      wsClient.send(message);
+    if (!session.discordToken) {
+      broadcast({ kind: 'client-error', message: 'Discord-Anmeldung fehlt. Bitte erneut anmelden.' });
+      wsClient.disconnect();
+      return;
     }
+    wsClient.send({ type: 'AUTHENTICATE', token: session.discordToken });
   });
 
   wsClient.on('reconnecting', (attempt, delayMs) => {
@@ -118,7 +118,21 @@ function wireWsClient(): void {
   });
 
   wsClient.on('message', (message: ServerMessage) => {
-    if (message.type === 'STATE') {
+    if (message.type === 'AUTHENTICATED') {
+      if (session.discordUserId && session.discordUserId !== message.user.id) {
+        lastLobbyState = null;
+        session.lobbyId = null;
+        session.playerId = null;
+        session.token = null;
+      }
+      session.discordUserId = message.user.id;
+      session.playerName = message.user.username;
+      broadcast({ kind: 'open' });
+      const queuedRestore = pendingRestore;
+      pendingRestore = null;
+      if (queuedRestore) wsClient.send(queuedRestore);
+      else if (session.lobbyId) wsClient.send({ type: 'JOIN_LOBBY', lobbyId: session.lobbyId });
+    } else if (message.type === 'STATE') {
       lastLobbyState = message.state;
       if (message.self) {
         session.playerId = message.self.playerId;
@@ -155,6 +169,10 @@ function wireWsClient(): void {
         ordenes: [],
         overlaySettings,
       });
+    } else if (message.type === 'ERROR' && message.code === 'INVALID_TOKEN' && session.serverUrl) {
+      discordSessionStore.delete(session.serverUrl);
+      session.discordToken = null;
+      wsClient.disconnect();
     }
     broadcast({ kind: 'server-message', message });
   });
@@ -265,6 +283,7 @@ app.whenReady().then(() => {
     setPendingRestore: (message) => {
       pendingRestore = message;
     },
+    discordSessionStore,
     getOverlaySettings: () => overlaySettings,
     setOverlaySettings,
     getAppVersion: () => app.getVersion(),

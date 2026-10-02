@@ -37,7 +37,8 @@ export const IpcChannel = {
 
 export interface ConnectPayload {
   serverUrl: string;
-  playerName: string;
+  playerName?: string;
+  forceDiscordLogin?: boolean;
 }
 
 /** Pushed from main -> every renderer window whenever the connection state changes. */

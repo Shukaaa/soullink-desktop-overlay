@@ -39,6 +39,9 @@ export class WsClient extends EventEmitter {
   }
 
   connect(url: string): void {
+    const previousSocket = this.ws;
+    this.ws = null;
+    previousSocket?.close();
     this.url = url;
     this.manualClose = false;
     this.reconnectAttempt = 0;
@@ -55,19 +58,16 @@ export class WsClient extends EventEmitter {
     // Once disconnect() is called, no automatic reconnect should ever fire
     // again for this attempt, whether we're mid-handshake, connected, or
     // sitting in the gap between two retry attempts.
-    const wasActive = this.url !== null;
     this.manualClose = true;
     this.url = null;
     this.clearReconnectTimer();
     const ws = this.ws;
     this.ws = null;
     ws?.close();
-    // If we were in the middle of a retry-wait (no live socket to fire its
-    // own 'close' event) the UI would otherwise never learn the connection
-    // attempt was cancelled, so emit it ourselves. When there *is* a live
-    // socket, its own close handler is guarded (`this.ws !== ws`) and will
-    // no-op, avoiding a duplicate emission.
-    if (wasActive) this.emit('close');
+    // This also ends an OAuth wait before a socket has been opened. When a
+    // live socket exists its own close handler is guarded (`this.ws !== ws`)
+    // and cannot emit a duplicate event.
+    this.emit('close');
   }
 
   send(message: ClientMessage): boolean {

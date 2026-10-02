@@ -17,6 +17,10 @@ export interface PersistedPlayer {
   /** True for a player recreated from someone else's RESTORE_LOBBY_STATE
    * snapshot that hasn't been claimed (reconnected to) by its real device yet. */
   restoredPlaceholder: boolean;
+  /** Discord account identity for authenticated lobby participants. */
+  userId?: string | null;
+  /** A kicked participant remains in storage for historical tracking. */
+  kicked?: boolean;
   /** Always exactly SLOT_COUNT entries. */
   slots: PokemonSlot[];
 }
@@ -29,6 +33,14 @@ export interface PersistedLobby {
   gameVersionId: GameVersionId | null;
   ordenes: boolean[];
   players: PersistedPlayer[];
+  /** Discord account that permanently owns and administers this lobby. */
+  ownerUserId?: string | null;
+  updatedAt?: number;
+}
+
+export interface DiscordUser {
+  id: string;
+  username: string;
 }
 
 /**
@@ -49,6 +61,8 @@ export interface LobbyRepository {
   deleteLobby(lobbyId: string): void;
   /** Loads every persisted lobby, e.g. on server startup. */
   loadAll(): PersistedLobby[];
+  saveDiscordSession(user: DiscordUser, tokenHash: string): void;
+  findDiscordUserByTokenHash(tokenHash: string): DiscordUser | null;
   /** Releases any underlying resources (file handles, connections, ...). */
   close(): void;
 }
@@ -70,6 +84,14 @@ export class NullLobbyRepository implements LobbyRepository {
 
   loadAll(): PersistedLobby[] {
     return [];
+  }
+
+  saveDiscordSession(_user: DiscordUser, _tokenHash: string): void {
+    // no-op
+  }
+
+  findDiscordUserByTokenHash(_tokenHash: string): DiscordUser | null {
+    return null;
   }
 
   close(): void {

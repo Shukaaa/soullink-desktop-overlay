@@ -39,7 +39,7 @@ export interface LobbyState {
   createdAt: number;
 }
 
-export const MAX_NAME_LENGTH = 24;
+export const MAX_NAME_LENGTH = 32;
 export const DEFAULT_MAX_PLAYERS_PER_LOBBY = 4;
 export const RECONNECT_GRACE_MS = 60_000;
 export const EMPTY_LOBBY_TTL_MS = 5 * 60_000;

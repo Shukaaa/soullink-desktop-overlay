@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { LobbyState, OverlaySettings, ServerMessage } from '@soullink/shared';
+import type { LobbyState, OverlaySettings, OwnedLobbySummary, ServerMessage } from '@soullink/shared';
 import { DEFAULT_OVERLAY_SETTINGS } from '@soullink/shared';
 import type { WsEvent } from '../../../common/ipc';
 
@@ -10,6 +10,8 @@ export interface AppState {
   error: string | null;
   lobby: LobbyState | null;
   selfPlayerId: string | null;
+  discordUser: { id: string; username: string } | null;
+  ownedLobbies: OwnedLobbySummary[];
   reconnectInfo: { attempt: number; delayMs: number } | null;
   overlaySettings: OverlaySettings;
 }
@@ -27,6 +29,8 @@ const initialState: AppState = {
   error: null,
   lobby: null,
   selfPlayerId: null,
+  discordUser: null,
+  ownedLobbies: [],
   reconnectInfo: null,
   overlaySettings: DEFAULT_OVERLAY_SETTINGS,
 };
@@ -60,7 +64,7 @@ export function reduceWsEvent(state: AppState, event: WsEvent): Partial<AppState
       // cancels any pending retry) -- either way, stale reconnect info from
       // a previous attempt shouldn't linger around, and neither should a
       // stale hosted-lobbies list from before we lost the connection.
-      return { connectionStatus: 'closed', reconnectInfo: null };
+      return { connectionStatus: 'closed', reconnectInfo: null, ownedLobbies: [] };
     case 'client-error':
       return { error: event.message };
     case 'server-message':
@@ -74,6 +78,10 @@ export function reduceWsEvent(state: AppState, event: WsEvent): Partial<AppState
 
 function reduceServerMessage(state: AppState, message: ServerMessage): Partial<AppState> {
   switch (message.type) {
+    case 'AUTHENTICATED':
+      return { discordUser: message.user, lobby: null, selfPlayerId: null, error: null };
+    case 'OWNED_LOBBIES':
+      return { ownedLobbies: message.lobbies };
     case 'STATE':
       return {
         lobby: message.state,

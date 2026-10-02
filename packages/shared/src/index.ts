@@ -18,6 +18,10 @@ export {
 export { GAME_VERSION_GROUPS, isGameVersionId, getGameVersion, normalizeOrdenProgress } from './gameVersions';
 
 export {
+  AuthenticateMessage,
+  ListOwnedLobbiesMessage,
+  RejoinOwnedLobbyMessage,
+  DeleteOwnedLobbyMessage,
   pokemonSlotSchema,
   playerSnapshotSchema,
   CreateLobbyMessage,
@@ -34,11 +38,18 @@ export {
   safeParseClientMessage,
 } from './protocol';
 export type {
+  AuthenticateMessage as AuthenticateMessageType,
+  ListOwnedLobbiesMessage as ListOwnedLobbiesMessageType,
+  RejoinOwnedLobbyMessage as RejoinOwnedLobbyMessageType,
+  DeleteOwnedLobbyMessage as DeleteOwnedLobbyMessageType,
   PokemonSlotInput,
   PlayerSnapshot,
   StateMessage,
   ErrorMessage,
   LeftLobbyMessage,
+  AuthenticatedMessage,
+  OwnedLobbySummary,
+  OwnedLobbiesMessage,
   ServerMessage,
 } from './protocol';
 

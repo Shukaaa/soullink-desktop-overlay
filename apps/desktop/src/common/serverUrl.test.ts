@@ -1,5 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeServerUrlForCompare, serverUrlsMatch } from './serverUrl';
+import { normalizeServerUrlForCompare, normalizeServerUrlForConnection, serverUrlsMatch } from './serverUrl';
+
+describe('normalizeServerUrlForConnection', () => {
+  it('converts HTTPS addresses to secure WebSocket URLs', () => {
+    expect(normalizeServerUrlForConnection(' https://play.example.com/socket ')).toBe(
+      'wss://play.example.com/socket'
+    );
+  });
+
+  it('converts HTTP addresses to WebSocket URLs for local development', () => {
+    expect(normalizeServerUrlForConnection('http://localhost:8787')).toBe('ws://localhost:8787/');
+  });
+
+  it('rejects insecure WebSocket addresses for remote servers', () => {
+    expect(() => normalizeServerUrlForConnection('http://play.example.com')).toThrow(/must use wss/i);
+    expect(() => normalizeServerUrlForConnection('ws://play.example.com')).toThrow(/must use wss/i);
+  });
+
+  it('rejects unsupported and malformed addresses', () => {
+    expect(() => normalizeServerUrlForConnection('ftp://play.example.com')).toThrow(/must use http/i);
+    expect(() => normalizeServerUrlForConnection('not a URL')).toThrow(/absolute URL/i);
+  });
+});
 
 describe('normalizeServerUrlForCompare', () => {
   it('returns an empty string for blank/nullish input', () => {
@@ -26,6 +48,11 @@ describe('normalizeServerUrlForCompare', () => {
       normalizeServerUrlForCompare('ws://localhost:8787')
     );
     expect(normalizeServerUrlForCompare('ws://Example.com/Path')).toBe('ws://example.com/Path');
+  });
+
+  it('treats HTTP(S) addresses as their corresponding WebSocket origins', () => {
+    expect(serverUrlsMatch('https://play.example.com', 'wss://play.example.com')).toBe(true);
+    expect(serverUrlsMatch('http://localhost:8787', 'ws://localhost:8787')).toBe(true);
   });
 
   it('falls back to a plain comparison for non-parseable input', () => {

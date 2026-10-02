@@ -7,7 +7,7 @@ import type Database from 'better-sqlite3';
  * durable, requires no extra table, and is read/written atomically with the
  * rest of the file.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /**
  * Initializes (or safely reuses) the on-disk schema. Always uses
@@ -16,11 +16,10 @@ export const SCHEMA_VERSION = 3;
  * data. Call once per process right after opening the database.
  */
 export function initSchema(db: Database.Database): void {
-  // WAL is the recommended journal mode for a single-writer server process:
-  // readers don't block the writer and vice versa, and it survives crashes
-  // better than the default rollback journal on a persistent volume.
+  // WAL keeps readers from blocking writes; FULL syncs each committed lobby
+  // update to durable storage before the server acknowledges a mutation.
   db.pragma('journal_mode = WAL');
-  db.pragma('synchronous = NORMAL');
+  db.pragma('synchronous = FULL');
   db.pragma('foreign_keys = ON');
 
   db.exec(`
@@ -50,6 +49,20 @@ export function initSchema(db: Database.Database): void {
       pokemon_id INTEGER,
       PRIMARY KEY (player_id, slot_index)
     );
+
+    CREATE TABLE IF NOT EXISTS discord_users (
+      id TEXT PRIMARY KEY,
+      username TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS discord_sessions (
+      token_hash TEXT PRIMARY KEY,
+      discord_user_id TEXT NOT NULL REFERENCES discord_users(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_discord_sessions_user_id ON discord_sessions(discord_user_id);
   `);
 
   const currentVersion = db.pragma('user_version', { simple: true }) as number;
@@ -59,6 +72,18 @@ export function initSchema(db: Database.Database): void {
     }
     if (currentVersion < 3) {
       db.exec('ALTER TABLE lobbies ADD COLUMN game_version_id TEXT');
+    }
+    if (currentVersion < 4) {
+      db.exec(`
+        ALTER TABLE lobbies ADD COLUMN owner_user_id TEXT;
+        ALTER TABLE lobbies ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE players ADD COLUMN user_id TEXT;
+        ALTER TABLE players ADD COLUMN kicked INTEGER NOT NULL DEFAULT 0;
+        UPDATE lobbies SET updated_at = created_at WHERE updated_at = 0;
+        CREATE INDEX IF NOT EXISTS idx_lobbies_owner_user_id ON lobbies(owner_user_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_players_lobby_user_id
+          ON players(lobby_id, user_id) WHERE user_id IS NOT NULL;
+      `);
     }
     db.pragma(`user_version = ${SCHEMA_VERSION}`);
   }

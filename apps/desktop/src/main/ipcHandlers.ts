@@ -1,4 +1,4 @@
-import { clipboard, ipcMain, type BrowserWindow } from 'electron';
+import { clipboard, ipcMain, shell, type BrowserWindow } from 'electron';
 import type { LobbyState, OverlaySettings, RestoreLobbyStateMessage } from '@soullink/shared';
 import { safeParseClientMessage } from '@soullink/shared';
 import {
@@ -15,6 +15,9 @@ import type { SaveStateService } from './saveState/SaveStateService';
 import type { SaveFile, SaveFileMeta } from './saveState/schema';
 import type { ConnectionHistoryEntry } from './saveState/connectionHistory';
 import type { UpdaterController } from './updater';
+import { DiscordSessionStore } from './discordSessionStore';
+import { loginWithDiscord } from './discordLogin';
+import { normalizeServerUrlForConnection } from '../common/serverUrl';
 
 export interface SessionState {
   playerId: string | null;
@@ -22,6 +25,8 @@ export interface SessionState {
   token: string | null;
   playerName: string | null;
   serverUrl: string | null;
+  discordToken: string | null;
+  discordUserId: string | null;
 }
 
 export interface IpcContext {
@@ -31,8 +36,9 @@ export interface IpcContext {
   getOverlayWindow: () => BrowserWindow | null;
   getLastState: () => LobbyState | null;
   setOverlayClickThrough: (ignore: boolean) => void;
-  /** Queues a restore message to be sent as soon as the next `open` event fires. */
-  setPendingRestore: (message: RestoreLobbyStateMessage) => void;
+  /** Queues a local-save rejoin until Discord authentication completes. */
+  setPendingRestore: (message: RestoreLobbyStateMessage | null) => void;
+  discordSessionStore: DiscordSessionStore;
   getOverlaySettings: () => OverlaySettings;
   /** Merges `partial` onto the current overlay settings, applies it (window
    * position/broadcast), persists it, and returns the resulting settings. */
@@ -68,14 +74,45 @@ function currentSaveFields(ctx: IpcContext): Omit<SaveFile, 'version' | 'id' | '
 }
 
 export function registerIpcHandlers(ctx: IpcContext): void {
-  ipcMain.handle(IpcChannel.Connect, (_event, payload: ConnectPayload) => {
-    ctx.session.playerName = payload.playerName;
-    ctx.session.serverUrl = payload.serverUrl;
-    ctx.saveStateService.recordConnection({ serverUrl: payload.serverUrl, playerName: payload.playerName });
-    ctx.wsClient.connect(payload.serverUrl);
-  });
+  let loginAbortController: AbortController | null = null;
+  async function connect(payload: ConnectPayload): Promise<void> {
+    loginAbortController?.abort();
+    loginAbortController = new AbortController();
+    const controller = loginAbortController;
+    try {
+      const serverUrl = normalizeServerUrlForConnection(payload.serverUrl);
+      const existing = payload.forceDiscordLogin ? null : ctx.discordSessionStore.get(serverUrl);
+      const login = existing
+        ? { token: existing.token, username: existing.username }
+        : await beginDiscordLogin(serverUrl, controller.signal);
+      if (!existing) ctx.discordSessionStore.set(serverUrl, login);
+      if (ctx.session.serverUrl && ctx.session.serverUrl !== serverUrl) {
+        ctx.session.lobbyId = null;
+        ctx.session.playerId = null;
+        ctx.session.token = null;
+        ctx.session.discordUserId = null;
+      }
+      if (payload.forceDiscordLogin) {
+        ctx.session.lobbyId = null;
+        ctx.session.playerId = null;
+        ctx.session.token = null;
+        ctx.session.discordUserId = null;
+      }
+      ctx.session.playerName = login.username;
+      ctx.session.serverUrl = serverUrl;
+      ctx.session.discordToken = login.token;
+      ctx.saveStateService.recordConnection({ serverUrl, playerName: login.username });
+      ctx.wsClient.connect(serverUrl);
+    } finally {
+      if (loginAbortController === controller) loginAbortController = null;
+    }
+  }
+  ipcMain.handle(IpcChannel.Connect, (_event, payload: ConnectPayload) => connect(payload));
 
   ipcMain.handle(IpcChannel.Disconnect, () => {
+    loginAbortController?.abort();
+    loginAbortController = null;
+    ctx.setPendingRestore(null);
     ctx.wsClient.disconnect();
     ctx.session.lobbyId = null;
     ctx.session.playerId = null;
@@ -132,7 +169,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     (): PublicSaveFile => toPublic(ctx.saveStateService.loadAutosave().data)
   );
 
-  ipcMain.handle(IpcChannel.SaveRestore, (_event, id: string): PublicSaveFile => {
+  ipcMain.handle(IpcChannel.SaveRestore, async (_event, id: string): Promise<PublicSaveFile> => {
     const save = id === 'autosave' ? ctx.saveStateService.loadAutosave().data : ctx.saveStateService.loadSave(id);
     if (!save.serverUrl) {
       throw new Error('This save has no server URL to reconnect to.');
@@ -145,7 +182,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     ctx.session.serverUrl = save.serverUrl;
     ctx.setOverlaySettings(save.overlaySettings);
     ctx.setPendingRestore(restoreMessage);
-    ctx.wsClient.connect(save.serverUrl);
+    await connect({ serverUrl: save.serverUrl });
     return toPublic(save);
   });
 
@@ -171,6 +208,14 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   ipcMain.handle(IpcChannel.UpdaterCheck, (): void => ctx.updater.checkForUpdates());
   ipcMain.handle(IpcChannel.UpdaterDownload, (): void => ctx.updater.downloadUpdate());
   ipcMain.handle(IpcChannel.UpdaterInstall, (): void => ctx.updater.quitAndInstall());
+}
+
+async function beginDiscordLogin(
+  serverUrl: string,
+  signal: AbortSignal
+): Promise<{ token: string; username: string }> {
+  const result = await loginWithDiscord(serverUrl, (url) => shell.openExternal(url), signal);
+  return { token: result.token, username: result.username };
 }
 
 function clamp(value: number, min: number, max: number): number {

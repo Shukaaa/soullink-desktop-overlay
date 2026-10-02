@@ -2,13 +2,9 @@ import type { LobbyState, PlayerSnapshot, RestoreLobbyStateMessage } from '@soul
 import type { SaveFile, SavedPlayer } from './saveState/schema';
 
 /**
- * Builds the RESTORE_LOBBY_STATE message to send right after connecting, if
- * the given save has enough information to attempt a restore. Returns null
- * when there is nothing to restore (e.g. a brand new save that never joined
- * a lobby). The `snapshot` field is only attached when we know the full
- * roster, so the server can rebuild the lobby if it lost its state; if the
- * server still remembers the lobby/player/token, the snapshot is ignored and
- * this behaves like a plain reconnect.
+ * Legacy snapshot builder retained for existing save-file compatibility.
+ * Current authenticated clients rejoin by lobby code; the server never
+ * accepts a client snapshot as authoritative lobby data.
  */
 export function buildRestoreMessage(save: SaveFile): RestoreLobbyStateMessage | null {
   if (!save.lobbyId || !save.selfPlayerId || !save.selfToken) return null;
@@ -43,13 +39,9 @@ export interface SessionIdentity {
 }
 
 /**
- * Decides what (if anything) to send immediately after the WebSocket
- * connection opens. An explicit pending restore -- queued by the user
- * picking a save from the manual save dropdown -- always wins. Otherwise,
- * if there's a live in-memory session (a lobby joined earlier this run), a
- * plain reconnect is sent. A cold start with no in-memory session sends
- * nothing: lobbies are temporary, so a fresh app launch must never rejoin
- * one just because an autosave file happens to remember it.
+ * Legacy reconnect-message selector retained for older local save files.
+ * Current clients authenticate with Discord and rejoin saved server lobbies
+ * using JOIN_LOBBY after the server confirms the account.
  */
 export function decideOpenMessage(
   pendingRestore: RestoreLobbyStateMessage | null,

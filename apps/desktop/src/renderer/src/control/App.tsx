@@ -72,11 +72,28 @@ function translateErrorMessage(message: string): string {
     ['Player not found in this lobby.', 'Der Spieler wurde in dieser Lobby nicht gefunden.'],
     ['You must join a lobby first.', 'Du musst zuerst einer Lobby beitreten.'],
     ['Only the lobby host can do that.', 'Nur der Host darf diese Aktion ausführen.'],
+    ['Sign in with Discord before using the lobby server.', 'Melde dich zuerst mit Discord an.'],
+    ['Sign in with Discord before creating a lobby.', 'Melde dich zuerst mit Discord an.'],
+    ['Sign in with Discord before joining a lobby.', 'Melde dich zuerst mit Discord an.'],
+    ['Sign in with Discord first.', 'Melde dich zuerst mit Discord an.'],
+    ['You do not own this lobby.', 'Diese Lobby gehört nicht zu deinem Discord-Konto.'],
+    ['You were removed from this lobby by the admin.', 'Du wurdest vom Admin aus dieser Lobby entfernt.'],
+    ['Discord session is invalid. Sign in again.', 'Deine Discord-Anmeldung ist abgelaufen. Bitte melde dich erneut an.'],
+    ['Discord OAuth is not configured on this server.', 'Discord-Login ist auf diesem Server noch nicht eingerichtet.'],
     ['This save has no server URL to reconnect to.', 'Dieser Speicherstand enthält keine Serveradresse.'],
     ['This save has no lobby to restore.', 'Dieser Speicherstand enthält keine Lobby zum Wiederherstellen.'],
   ];
   const translation = translations.find(([english]) => message === english);
   if (translation) return translation[1];
+  if (message.startsWith('The SoulLink server returned an empty response')) {
+    return 'Der Server hat leer geantwortet. Prüfe die Serveradresse und aktualisiere den Server auf eine Version mit Discord-Login.';
+  }
+  if (message.startsWith('The SoulLink server returned a non-JSON response')) {
+    return 'Der Server hat eine ungültige Antwort geliefert. Prüfe die Serveradresse und aktualisiere den Server auf eine Version mit Discord-Login.';
+  }
+  if (message.startsWith('Could not reach the SoulLink server')) {
+    return 'Der Server ist nicht erreichbar. Prüfe Serveradresse, Netzwerkverbindung und das HTTPS-Zertifikat.';
+  }
   if (message.startsWith('Lobby "') && message.endsWith('" was not found.')) {
     return message.replace(/^Lobby "(.+)" was not found\.$/, 'Die Lobby "$1" wurde nicht gefunden.');
   }
@@ -87,7 +104,16 @@ function translateErrorMessage(message: string): string {
 export function App() {
   useWsBridge();
 
-  const { connectionStatus, error, lobby, selfPlayerId, reconnectInfo, setConnecting } = useAppStore();
+  const {
+    connectionStatus,
+    error,
+    lobby,
+    selfPlayerId,
+    reconnectInfo,
+    discordUser,
+    ownedLobbies,
+    setConnecting,
+  } = useAppStore();
 
   const [serverUrl, setServerUrl] = useState('ws://localhost:8787');
   const [playerName, setPlayerName] = useState('');
@@ -98,6 +124,7 @@ export function App() {
   const [overlaySettings, setOverlaySettingsState] = useState<OverlaySettings>(DEFAULT_OVERLAY_SETTINGS);
   const [saves, setSaves] = useState<SaveFileMeta[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [saveName, setSaveName] = useState('');
   const [selectedSaveId, setSelectedSaveId] = useState('');
   const [history, setHistory] = useState<ConnectionHistoryEntry[]>([]);
@@ -205,12 +232,16 @@ export function App() {
     }
   }, [filteredSaves, selectedSaveId]);
 
-  function connect() {
+  function connect(forceDiscordLogin = false) {
     // Flip to 'connecting' immediately rather than waiting for the IPC round
     // trip + main-process broadcast, so the status tag and Disconnect/Cancel
     // action appear the instant the user clicks Connect.
     setConnecting();
-    window.api.connect({ serverUrl, playerName }).then(refreshHistory);
+    setAuthError(null);
+    window.api
+      .connect({ serverUrl, forceDiscordLogin })
+      .then(refreshHistory)
+      .catch((err: unknown) => setAuthError(err instanceof Error ? err.message : 'Discord-Anmeldung fehlgeschlagen.'));
   }
 
   /** Fills in the URL/name from a history entry and connects directly with it
@@ -219,7 +250,11 @@ export function App() {
     setServerUrl(entry.serverUrl);
     setPlayerName(entry.playerName);
     setConnecting();
-    window.api.connect({ serverUrl: entry.serverUrl, playerName: entry.playerName }).then(refreshHistory);
+    setAuthError(null);
+    window.api
+      .connect({ serverUrl: entry.serverUrl })
+      .then(refreshHistory)
+      .catch((err: unknown) => setAuthError(err instanceof Error ? err.message : 'Discord-Anmeldung fehlgeschlagen.'));
   }
 
   function disconnect() {
@@ -238,9 +273,8 @@ export function App() {
     window.api.installUpdate();
   }
 
-  async function copyLobbyCode() {
-    if (!lobby) return;
-    await window.api.copyToClipboard(lobby.id);
+  async function copyLobbyCode(lobbyId: string) {
+    await window.api.copyToClipboard(lobbyId);
     setLobbyCodeCopied(true);
     showSuccessAlert('Lobbycode wurde kopiert.');
     window.setTimeout(() => setLobbyCodeCopied(false), 1500);
@@ -252,11 +286,20 @@ export function App() {
   }
 
   function createLobby() {
-    window.api.send({ type: 'CREATE_LOBBY', name: playerName });
+    window.api.send({ type: 'CREATE_LOBBY' });
   }
 
   function joinLobby() {
-    window.api.send({ type: 'JOIN_LOBBY', lobbyId: joinLobbyId.trim().toUpperCase(), name: playerName });
+    window.api.send({ type: 'JOIN_LOBBY', lobbyId: joinLobbyId.trim().toUpperCase() });
+  }
+
+  function rejoinOwnedLobby(lobbyId: string) {
+    window.api.send({ type: 'REJOIN_OWNED_LOBBY', lobbyId });
+  }
+
+  function deleteOwnedLobby(lobbyId: string) {
+    if (!window.confirm(`Lobby ${lobbyId} und alle gespeicherten Daten dauerhaft löschen?`)) return;
+    window.api.send({ type: 'DELETE_OWNED_LOBBY', lobbyId });
   }
 
   function leaveLobby() {
@@ -443,7 +486,7 @@ export function App() {
         <div className={`connection-status-tag status-${connectionStatus}`}>
           <span className="connection-status-text">
             {connectionStatus === 'open'
-              ? `Angemeldet als ${playerName}`
+              ? `Angemeldet als ${discordUser?.username ?? playerName}`
               : connectionStatusLabel(connectionStatus, reconnectInfo)}
           </span>
           <button type="button" className="disconnect-link" onClick={disconnect}>
@@ -451,7 +494,7 @@ export function App() {
           </button>
         </div>
       )}
-      {error && <p className="error-line">{translateErrorMessage(error)}</p>}
+      {(error || authError) && <p className="error-line">{translateErrorMessage(error ?? authError ?? '')}</p>}
 
       {visibility.showConnectionForm && (
         <section className="panel">
@@ -460,15 +503,20 @@ export function App() {
             Serveradresse
             <input value={serverUrl} onChange={(e) => setServerUrl(e.target.value)} />
           </label>
-          <label>
-            Dein Name
-            <input value={playerName} onChange={(e) => setPlayerName(e.target.value)} />
-          </label>
           <div className="button-row">
-            <button type="button" onClick={connect} disabled={!playerName.trim() || !serverUrl.trim()}>
-              Verbinden
+            <button type="button" onClick={() => connect()} disabled={!serverUrl.trim()}>
+              Mit Discord anmelden
             </button>
+            {discordUser && (
+              <button type="button" onClick={() => connect(true)} disabled={!serverUrl.trim()}>
+                Discord-Konto wechseln
+              </button>
+            )}
           </div>
+          <p className="hint-line">Dein Discord-Benutzername wird automatisch als Spielername verwendet.</p>
+          <p className="hint-line">
+            Remote-Server kannst du mit https:// oder wss:// eingeben; lokal funktioniert ws://localhost:8787.
+          </p>
         </section>
       )}
 
@@ -509,6 +557,51 @@ export function App() {
           isOpen={openSection === 'lobby'}
           onToggle={() => setOpenSection((current) => toggleAccordionSection(current, 'lobby'))}
         >
+          {ownedLobbies.length > 0 && (
+            <section className="owned-lobbies">
+              <h3>Deine Lobbys</h3>
+              <ul className="owned-lobby-list">
+                {ownedLobbies.map((ownedLobby) => (
+                  <li key={ownedLobby.id} className="owned-lobby-row">
+                    <div className="owned-lobby-info">
+                      <code>{ownedLobby.id}</code>
+                      <span>
+                        {ownedLobby.connectedPlayerCount}/{ownedLobby.playerCount} Spieler verbunden
+                      </span>
+                      <span>
+                        {ownedLobby.gameVersionId
+                          ? getGameVersion(ownedLobby.gameVersionId).label
+                          : 'Keine Spielversion ausgewählt'}
+                      </span>
+                      <span>
+                        Spieler: {ownedLobby.players.map((player) => player.name).join(', ') || 'Noch keine'}
+                      </span>
+                      <span>Zuletzt geändert {new Date(ownedLobby.updatedAt).toLocaleString()}</span>
+                    </div>
+                    <div className="button-row">
+                      <button
+                        type="button"
+                        onClick={() => rejoinOwnedLobby(ownedLobby.id)}
+                        disabled={lobby?.id === ownedLobby.id}
+                      >
+                        {lobby?.id === ownedLobby.id ? 'Aktuelle Lobby' : 'Beitreten'}
+                      </button>
+                      <button type="button" onClick={() => copyLobbyCode(ownedLobby.id)}>
+                        Code kopieren
+                      </button>
+                      <button
+                        type="button"
+                        className="history-delete-button"
+                        onClick={() => deleteOwnedLobby(ownedLobby.id)}
+                      >
+                        Löschen
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {visibility.showLobbyCreateJoin && (
             <>
               <div className="button-row">
@@ -534,7 +627,7 @@ export function App() {
               <div className="lobby-code-row">
                 <span className="lobby-code-label">Lobbycode</span>
                 <code>{lobby.id}</code>
-                <button type="button" onClick={copyLobbyCode}>
+                <button type="button" onClick={() => copyLobbyCode(lobby.id)}>
                   {lobbyCodeCopied ? 'Kopiert' : 'Code kopieren'}
                 </button>
               </div>
@@ -751,6 +844,10 @@ export function App() {
           )}
 
           {saveError && <p className="error-line">{saveError}</p>}
+          <p className="hint-line">
+            Orden- und Pokémon-Fortschritt werden vom Server gespeichert. Beim Laden wird der gespeicherten Lobby
+            wieder beigetreten.
+          </p>
 
           <div className="save-load-row">
             <label>
@@ -766,7 +863,7 @@ export function App() {
             </label>
             <div className="button-row">
               <button type="button" onClick={loadSelectedSave} disabled={!selectedSaveId}>
-                Laden / Wiederherstellen
+                Server-Lobby beitreten
               </button>
               <button type="button" onClick={() => handleDeleteSave(selectedSaveId)} disabled={!selectedSaveId}>
                 Löschen

@@ -1,5 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { RECONNECT_GRACE_MS, SLOT_COUNT } from '@soullink/shared';
 import { LobbyManager } from '../../src/LobbyManager';
@@ -242,5 +243,87 @@ describe('LobbyManager + SqliteLobbyRepository - persistence across restarts', (
         token: memberToken,
       })
     ).toThrowError(/no longer exists/i);
+  });
+
+  it('keeps owned lobby data and its roster indefinitely, then lets its Discord owner rejoin after restart', () => {
+    const { dir: d, dbPath } = makeTempDbPath();
+    dir = d;
+    const ownerToken = 'owner-token-012345678901234567890123456789';
+    const memberToken = 'member-token-01234567890123456789012345678';
+    const repositoryA = new SqliteLobbyRepository(dbPath);
+    repositoryA.saveDiscordSession(
+      { id: 'discord-owner', username: 'Owner' },
+      createHash('sha256').update(ownerToken).digest('hex')
+    );
+    repositoryA.saveDiscordSession(
+      { id: 'discord-member', username: 'Member' },
+      createHash('sha256').update(memberToken).digest('hex')
+    );
+    const managerA = new LobbyManager({ repository: repositoryA });
+    managers.push(managerA);
+
+    const ownerWs = fakeWs();
+    managerA.authenticate(ownerWs, ownerToken);
+    const { lobbyId, playerId: ownerPlayerId } = managerA.createLobby(ownerWs);
+    const memberWs = fakeWs();
+    managerA.authenticate(memberWs, memberToken);
+    const { playerId: memberPlayerId } = managerA.joinLobby(memberWs, lobbyId);
+    managerA.setPokemon(memberWs, 2, 25);
+    managerA.setGameVersion(ownerWs, 'red');
+    managerA.toggleOrden(ownerWs, 1);
+    managerA.handleDisconnect(memberWs);
+    managerA.handleDisconnect(ownerWs);
+    managerA.shutdown();
+
+    const managerB = openManager(dbPath);
+    managerB.loadFromRepository();
+    expect(managerB.lobbyCount).toBe(1);
+    const nonOwnerWs = fakeWs();
+    managerB.authenticate(nonOwnerWs, memberToken);
+    expect(() => managerB.deleteOwnedLobby(nonOwnerWs, lobbyId)).toThrowError(/do not own/i);
+    const ownerReconnectWs = fakeWs();
+    managerB.authenticate(ownerReconnectWs, ownerToken);
+    expect(() =>
+      managerB.restoreLobbyState(ownerReconnectWs, {
+        type: 'RESTORE_LOBBY_STATE',
+        lobbyId: 'FORGED1',
+        playerId: 'forged-player',
+        token: ownerToken,
+        snapshot: {
+          hostId: 'forged-player',
+          players: [
+            {
+              id: 'forged-player',
+              name: 'Forged',
+              isHost: true,
+              slots: Array.from({ length: SLOT_COUNT }, () => ({ pokemonId: null })),
+            },
+          ],
+        },
+      })
+    ).toThrowError(/cannot be restored from a local save/i);
+    expect(managerB.listOwnedLobbies(ownerReconnectWs)).toMatchObject([
+      { id: lobbyId, playerCount: 2, connectedPlayerCount: 0 },
+    ]);
+
+    const ownerRejoin = managerB.rejoinOwnedLobby(ownerReconnectWs, lobbyId);
+    expect(ownerRejoin.playerId).toBe(ownerPlayerId);
+    expect(ownerRejoin.state.gameVersionId).toBe('red');
+    expect(ownerRejoin.state.ordenes[1]).toBe(true);
+    expect(ownerRejoin.state.players.find((player) => player.id === memberPlayerId)?.slots[2]).toEqual({
+      pokemonId: 25,
+    });
+    expect(ownerRejoin.state.players.find((player) => player.id === ownerPlayerId)?.isHost).toBe(true);
+
+    const memberReconnectWs = fakeWs();
+    managerB.authenticate(memberReconnectWs, memberToken);
+    const memberRejoin = managerB.joinLobby(memberReconnectWs, lobbyId);
+    expect(memberRejoin.playerId).toBe(memberPlayerId);
+    expect(memberRejoin.state.players.find((player) => player.id === memberPlayerId)?.slots[2]).toEqual({
+      pokemonId: 25,
+    });
+
+    managerB.deleteOwnedLobby(ownerReconnectWs, lobbyId);
+    expect(managerB.lobbyCount).toBe(0);
   });
 });

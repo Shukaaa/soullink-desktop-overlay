@@ -76,8 +76,32 @@ function handleMessage(ws: WebSocket, raw: string, lobbyManager: LobbyManager): 
 
   const message = parsed.data;
   logger.info('Client message received', { type: message.type });
+  if (message.type !== 'AUTHENTICATE' && !lobbyManager.isAuthenticated(ws)) {
+    sendError(ws, ErrorCode.NOT_AUTHENTICATED, 'Sign in with Discord before using the lobby server.');
+    return;
+  }
   try {
     switch (message.type) {
+      case 'AUTHENTICATE': {
+        if (lobbyManager.isAuthenticated(ws)) {
+          throw new ProtocolError(ErrorCode.NOT_AUTHENTICATED, 'This WebSocket is already authenticated.');
+        }
+        const user = lobbyManager.authenticate(ws, message.token);
+        send(ws, { type: 'AUTHENTICATED', user });
+        send(ws, { type: 'OWNED_LOBBIES', lobbies: lobbyManager.listOwnedLobbies(ws) });
+        break;
+      }
+      case 'LIST_OWNED_LOBBIES':
+        send(ws, { type: 'OWNED_LOBBIES', lobbies: lobbyManager.listOwnedLobbies(ws) });
+        break;
+      case 'REJOIN_OWNED_LOBBY': {
+        const result = lobbyManager.rejoinOwnedLobby(ws, message.lobbyId);
+        send(ws, { type: 'STATE', state: result.state, self: { playerId: result.playerId, token: result.token } });
+        break;
+      }
+      case 'DELETE_OWNED_LOBBY':
+        lobbyManager.deleteOwnedLobby(ws, message.lobbyId);
+        break;
       case 'CREATE_LOBBY': {
         const result = lobbyManager.createLobby(ws, message.name);
         send(ws, { type: 'STATE', state: result.state, self: { playerId: result.playerId, token: result.token } });

@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { WebSocket } from 'ws';
 import {
   DEFAULT_MAX_PLAYERS_PER_LOBBY,
@@ -14,13 +14,14 @@ import {
   ProtocolError,
   RECONNECT_GRACE_MS,
   RestoreLobbyStateMessage,
+  OwnedLobbySummary,
   SLOT_COUNT,
   emptySlots,
   isValidSpeciesId,
   normalizeOrdenProgress,
 } from '@soullink/shared';
 import { NullLobbyRepository } from './db/lobbyRepository';
-import type { LobbyRepository, PersistedLobby, PersistedPlayer } from './db/lobbyRepository';
+import type { DiscordUser, LobbyRepository, PersistedLobby, PersistedPlayer } from './db/lobbyRepository';
 import { logger } from './logger';
 
 const LOBBY_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
@@ -40,12 +41,16 @@ interface PlayerRecord {
   /** True for a player entry recreated from a RESTORE_LOBBY_STATE snapshot
    * that hasn't been claimed (reconnected to) by its actual device yet. */
   restoredPlaceholder: boolean;
+  userId: string | null;
+  kicked: boolean;
 }
 
 interface LobbyRecord {
   id: string;
   hostId: string;
   createdAt: number;
+  updatedAt: number;
+  ownerUserId: string | null;
   gameVersionId: GameVersionId | null;
   ordenes: boolean[];
   players: Map<string, PlayerRecord>;
@@ -93,6 +98,8 @@ export interface LobbyManagerOptions {
 export class LobbyManager {
   private readonly lobbies = new Map<string, LobbyRecord>();
   private readonly connections = new WeakMap<WebSocket, ConnectionMeta>();
+  private readonly authenticatedUsers = new WeakMap<WebSocket, DiscordUser>();
+  private readonly authenticatedSockets = new Map<string, Set<WebSocket>>();
   private readonly maxPlayersPerLobby: number;
   private readonly repository: LobbyRepository;
 
@@ -106,17 +113,64 @@ export class LobbyManager {
     return this.lobbies.size;
   }
 
+  authenticate(ws: WebSocket, token: string): DiscordUser {
+    const user = this.repository.findDiscordUserByTokenHash(createHash('sha256').update(token).digest('hex'));
+    if (!user) {
+      throw new ProtocolError(ErrorCode.INVALID_TOKEN, 'Discord session is invalid. Sign in again.');
+    }
+    this.authenticatedUsers.set(ws, user);
+    const sockets = this.authenticatedSockets.get(user.id) ?? new Set<WebSocket>();
+    sockets.add(ws);
+    this.authenticatedSockets.set(user.id, sockets);
+    return user;
+  }
+
+  isAuthenticated(ws: WebSocket): boolean {
+    return this.authenticatedUsers.has(ws);
+  }
+
+  listOwnedLobbies(ws: WebSocket): OwnedLobbySummary[] {
+    const user = this.requireAuthenticatedUser(ws);
+    return this.ownedLobbies(user.id);
+  }
+
+  rejoinOwnedLobby(ws: WebSocket, lobbyId: string): JoinResult {
+    const user = this.requireAuthenticatedUser(ws);
+    const lobby = this.requireLobby(lobbyId);
+    if (lobby.ownerUserId !== user.id) {
+      throw new ProtocolError(ErrorCode.LOBBY_NOT_OWNED, 'You do not own this lobby.');
+    }
+    return this.joinLobby(ws, lobbyId, user.username);
+  }
+
+  deleteOwnedLobby(ws: WebSocket, lobbyId: string): void {
+    const user = this.requireAuthenticatedUser(ws);
+    const lobby = this.requireLobby(lobbyId);
+    if (lobby.ownerUserId !== user.id) {
+      throw new ProtocolError(ErrorCode.LOBBY_NOT_OWNED, 'You do not own this lobby.');
+    }
+    for (const player of lobby.players.values()) {
+      if (player.ws) {
+        this.connections.delete(player.ws);
+        this.send(player.ws, { type: 'LEFT_LOBBY', lobbyId: lobby.id });
+      }
+      if (player.disconnectTimer) clearTimeout(player.disconnectTimer);
+    }
+    if (lobby.emptyTimer) clearTimeout(lobby.emptyTimer);
+    this.lobbies.delete(lobby.id);
+    this.repository.deleteLobby(lobby.id);
+    this.broadcastOwnedLobbies(user.id);
+    logger.info('Owned lobby deleted', { lobbyId: lobby.id, ownerUserId: user.id });
+  }
+
   /**
    * Loads every persisted lobby from `repository` into memory. Intended to
    * be called once at process startup (after construction, before accepting
    * connections) so a server restart doesn't lose active lobbies.
    *
-   * Since a restart always drops any live WebSocket, every persisted player
-   * is treated as freshly disconnected: their remaining reconnect-grace
-   * window is recomputed from `disconnectedAt` (or, if they looked
-   * "connected" at save time, from now -- the process that held their
-   * socket is gone). Players whose grace period has already elapsed are
-   * dropped; lobbies left with zero players are deleted outright.
+   * Since a restart always drops any live WebSocket, legacy lobbies without
+   * an owner use the reconnect grace window. Discord-owned lobbies retain all
+   * players and lobby data until their permanent owner deletes them.
    */
   loadFromRepository(): void {
     const now = Date.now();
@@ -140,13 +194,19 @@ export class LobbyManager {
     this.repository.close();
   }
 
-  createLobby(ws: WebSocket, name: string): JoinResult {
+  createLobby(ws: WebSocket, name?: string): JoinResult {
+    const user = this.authenticatedUsers.get(ws) ?? null;
+    const playerName = sanitizeName(user?.username ?? name ?? '');
+    if (!playerName) {
+      throw new ProtocolError(ErrorCode.NOT_AUTHENTICATED, 'Sign in with Discord before creating a lobby.');
+    }
     const lobbyId = this.generateLobbyId();
+    if (this.connections.has(ws)) this.leaveLobby(ws);
     const playerId = randomUUID();
     const token = randomUUID();
     const player: PlayerRecord = {
       id: playerId,
-      name: sanitizeName(name),
+      name: playerName,
       token,
       isHost: true,
       connected: true,
@@ -156,11 +216,15 @@ export class LobbyManager {
       disconnectedAt: null,
       slots: emptySlots(),
       restoredPlaceholder: false,
+      userId: user?.id ?? null,
+      kicked: false,
     };
     const lobby: LobbyRecord = {
       id: lobbyId,
       hostId: playerId,
       createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ownerUserId: user?.id ?? null,
       gameVersionId: null,
       ordenes: [],
       players: new Map([[playerId, player]]),
@@ -178,14 +242,32 @@ export class LobbyManager {
     return { lobbyId, playerId, token, state: this.toState(lobby) };
   }
 
-  joinLobby(ws: WebSocket, lobbyId: string, name: string): JoinResult {
+  joinLobby(ws: WebSocket, lobbyId: string, name?: string): JoinResult {
     const lobby = this.requireLobby(lobbyId);
+    const currentConnection = this.connections.get(ws);
+    if (currentConnection && currentConnection.lobbyId !== lobby.id) this.leaveLobby(ws);
     this.cancelEmptyTimer(lobby);
 
-    if (lobby.players.size >= this.maxPlayersPerLobby) {
+    const user = this.authenticatedUsers.get(ws) ?? null;
+    if (user) {
+      const existingPlayer = [...lobby.players.values()].find((p) => p.userId === user.id);
+      if (existingPlayer) {
+        if (existingPlayer.kicked) {
+          throw new ProtocolError(ErrorCode.PLAYER_KICKED, 'You were removed from this lobby by the admin.');
+        }
+        existingPlayer.name = sanitizeName(user.username);
+        return this.reconnectExisting(ws, lobby, existingPlayer);
+      }
+      if ([...lobby.players.values()].filter((p) => p.connected && !p.kicked).length >= this.maxPlayersPerLobby) {
+        throw new ProtocolError(ErrorCode.LOBBY_FULL, 'This lobby is full.');
+      }
+    } else if (lobby.players.size >= this.maxPlayersPerLobby) {
       throw new ProtocolError(ErrorCode.LOBBY_FULL, 'This lobby is full.');
     }
-    const cleanName = sanitizeName(name);
+    const cleanName = sanitizeName(user?.username ?? name ?? '');
+    if (!cleanName) {
+      throw new ProtocolError(ErrorCode.NOT_AUTHENTICATED, 'Sign in with Discord before joining a lobby.');
+    }
     const nameTaken = [...lobby.players.values()].some(
       (p) => p.name.toLowerCase() === cleanName.toLowerCase()
     );
@@ -207,6 +289,8 @@ export class LobbyManager {
       disconnectedAt: null,
       slots: emptySlots(),
       restoredPlaceholder: false,
+      userId: user?.id ?? null,
+      kicked: false,
     };
     lobby.players.set(playerId, player);
     this.connections.set(ws, { lobbyId, playerId });
@@ -224,15 +308,40 @@ export class LobbyManager {
   }
 
   /**
-   * Restores a session. Three paths, in priority order:
-   *  1. The lobby/player/token still match live server state -> plain reconnect.
-   *  2. The lobby/player exist but were recreated from someone else's restore
-   *     snapshot and not yet claimed -> claim that placeholder identity.
-   *  3. Neither exists (e.g. the server restarted) -> rebuild the lobby from
-   *     the provided snapshot, validated against the configured player cap
-   *     and the fixed SLOT_COUNT per player.
+   * Legacy local-save restore path. Authenticated Discord sessions can only
+   * reconnect to server-owned rows for their verified account; their client
+   * snapshots are never allowed to recreate or overwrite server state.
    */
   restoreLobbyState(ws: WebSocket, msg: RestoreLobbyStateMessage): JoinResult {
+    const authenticatedUser = this.authenticatedUsers.get(ws);
+    if (authenticatedUser) {
+      const lobby = this.lobbies.get(msg.lobbyId);
+      if (lobby) {
+        const player = [...lobby.players.values()].find((candidate) => candidate.userId === authenticatedUser.id);
+        if (player && !player.kicked) {
+          return this.reconnectExisting(ws, lobby, player);
+        }
+        const savedPlayer = lobby.players.get(msg.playerId);
+        if (
+          savedPlayer &&
+          !savedPlayer.userId &&
+          !savedPlayer.kicked &&
+          savedPlayer.token === msg.token
+        ) {
+          savedPlayer.userId = authenticatedUser.id;
+          savedPlayer.name = sanitizeName(authenticatedUser.username);
+          if (!lobby.ownerUserId && savedPlayer.isHost) {
+            lobby.ownerUserId = authenticatedUser.id;
+            lobby.hostId = savedPlayer.id;
+          }
+          return this.reconnectExisting(ws, lobby, savedPlayer);
+        }
+      }
+      throw new ProtocolError(
+        ErrorCode.LOBBY_NOT_FOUND,
+        'Server-owned lobby data cannot be restored from a local save. Rejoin one of your saved lobbies.'
+      );
+    }
     const existingLobby = this.lobbies.get(msg.lobbyId);
     if (existingLobby) {
       const player = existingLobby.players.get(msg.playerId);
@@ -330,8 +439,26 @@ export class LobbyManager {
       throw new ProtocolError(ErrorCode.CANNOT_KICK_SELF, 'You cannot kick yourself.');
     }
     const target = lobby.players.get(targetPlayerId);
-    if (!target) {
+    if (!target || target.kicked) {
       throw new ProtocolError(ErrorCode.PLAYER_NOT_FOUND, 'Player not found in this lobby.');
+    }
+    if (lobby.ownerUserId) {
+      if (target.ws) {
+        this.connections.delete(target.ws);
+        target.ws.close();
+      }
+      target.connected = false;
+      target.ws = null;
+      target.disconnectedAt = Date.now();
+      target.kicked = true;
+      this.persist(lobby);
+      this.broadcastState(lobby);
+      logger.info('Player kicked from owned lobby', {
+        lobbyId: lobby.id,
+        playerId: player.id,
+        targetPlayerId,
+      });
+      return;
     }
     if (target.ws) {
       this.send(target.ws, {
@@ -361,6 +488,21 @@ export class LobbyManager {
     this.send(ws, { type: 'LEFT_LOBBY' });
     const lobby = this.lobbies.get(meta.lobbyId);
     if (!lobby) return;
+    if (lobby.ownerUserId) {
+      const player = lobby.players.get(meta.playerId);
+      if (player) {
+        player.connected = false;
+        player.ws = null;
+        player.disconnectedAt = Date.now();
+      }
+      this.persist(lobby);
+      this.broadcastState(lobby);
+      logger.info('Player left owned lobby; roster retained', {
+        lobbyId: meta.lobbyId,
+        playerId: meta.playerId,
+      });
+      return;
+    }
     this.removePlayerPermanently(lobby, meta.playerId);
     logger.info('Player left lobby', {
       lobbyId: meta.lobbyId,
@@ -370,29 +512,46 @@ export class LobbyManager {
   }
 
   handleDisconnect(ws: WebSocket): void {
+    const authenticatedUser = this.authenticatedUsers.get(ws);
+    if (authenticatedUser) {
+      const sockets = this.authenticatedSockets.get(authenticatedUser.id);
+      sockets?.delete(ws);
+      if (sockets?.size === 0) this.authenticatedSockets.delete(authenticatedUser.id);
+      this.authenticatedUsers.delete(ws);
+    }
     const meta = this.connections.get(ws);
     if (!meta) return;
     const lobby = this.lobbies.get(meta.lobbyId);
     if (!lobby) return;
     const player = lobby.players.get(meta.playerId);
     if (!player) return;
+    if (player.ws !== ws) return;
 
     player.connected = false;
     player.ws = null;
     player.disconnectedAt = Date.now();
-    this.armDisconnectTimer(lobby, player, RECONNECT_GRACE_MS);
+    if (!lobby.ownerUserId) {
+      this.armDisconnectTimer(lobby, player, RECONNECT_GRACE_MS);
+    }
     this.persist(lobby);
     this.broadcastState(lobby);
-    logger.info('Player disconnected; reconnect grace started', {
-      lobbyId: lobby.id,
-      playerId: player.id,
-      graceMs: RECONNECT_GRACE_MS,
-    });
+    logger.info(
+      lobby.ownerUserId ? 'Player disconnected; owned-lobby roster retained' : 'Player disconnected; reconnect grace started',
+      {
+        lobbyId: lobby.id,
+        playerId: player.id,
+        ...(!lobby.ownerUserId ? { graceMs: RECONNECT_GRACE_MS } : {}),
+      }
+    );
   }
 
   // -- internal helpers -----------------------------------------------------
 
   private reconnectExisting(ws: WebSocket, lobby: LobbyRecord, player: PlayerRecord): JoinResult {
+    if (player.ws && player.ws !== ws) {
+      this.connections.delete(player.ws);
+      player.ws.close();
+    }
     if (player.disconnectTimer) {
       clearTimeout(player.disconnectTimer);
       player.disconnectTimer = null;
@@ -465,12 +624,16 @@ export class LobbyManager {
         disconnectedAt: isSelf ? null : Date.now(),
         slots: normalizeSlotCount(snap.slots),
         restoredPlaceholder: !isSelf,
+        userId: null,
+        kicked: false,
       });
     }
     const lobby: LobbyRecord = {
       id: lobbyId,
       hostId: players.has(snapshot.hostId) ? snapshot.hostId : msg.playerId,
       createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ownerUserId: null,
       gameVersionId: snapshot.gameVersionId ?? null,
       ordenes: normalizeOrdenProgress(snapshot.gameVersionId ?? null, snapshot.ordenes ?? []),
       players,
@@ -493,6 +656,14 @@ export class LobbyManager {
   private removePlayerPermanently(lobby: LobbyRecord, playerId: string): void {
     const player = lobby.players.get(playerId);
     if (!player) return;
+    if (lobby.ownerUserId) {
+      player.connected = false;
+      player.ws = null;
+      player.disconnectedAt = Date.now();
+      this.persist(lobby);
+      this.broadcastState(lobby);
+      return;
+    }
     if (player.disconnectTimer) clearTimeout(player.disconnectTimer);
     lobby.players.delete(playerId);
     logger.info('Player removed permanently', {
@@ -574,7 +745,7 @@ export class LobbyManager {
     }
     this.requireHost(actor);
     const target = lobby.players.get(targetPlayerId);
-    if (!target) {
+    if (!target || target.kicked) {
       throw new ProtocolError(ErrorCode.PLAYER_NOT_FOUND, 'Player not found in this lobby.');
     }
     return target;
@@ -607,6 +778,43 @@ export class LobbyManager {
     return { lobby, player };
   }
 
+  private requireAuthenticatedUser(ws: WebSocket): DiscordUser {
+    const user = this.authenticatedUsers.get(ws);
+    if (!user) {
+      throw new ProtocolError(ErrorCode.NOT_AUTHENTICATED, 'Sign in with Discord first.');
+    }
+    return user;
+  }
+
+  private ownedLobbies(userId: string): OwnedLobbySummary[] {
+    return [...this.lobbies.values()]
+      .filter((lobby) => lobby.ownerUserId === userId)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .map((lobby) => {
+        const players = [...lobby.players.values()].filter((player) => !player.kicked);
+        return {
+          id: lobby.id,
+          createdAt: lobby.createdAt,
+          updatedAt: lobby.updatedAt,
+          gameVersionId: lobby.gameVersionId,
+          playerCount: players.length,
+          connectedPlayerCount: players.filter((player) => player.connected).length,
+          players: players.map((player) => ({
+            id: player.id,
+            name: player.name,
+            connected: player.connected,
+          })),
+        };
+      });
+  }
+
+  private broadcastOwnedLobbies(userId: string): void {
+    const lobbies = this.ownedLobbies(userId);
+    for (const ws of this.authenticatedSockets.get(userId) ?? []) {
+      this.send(ws, { type: 'OWNED_LOBBIES', lobbies });
+    }
+  }
+
   private generateLobbyId(): string {
     for (let attempt = 0; attempt < 20; attempt++) {
       const bytes = randomBytes(6);
@@ -621,6 +829,7 @@ export class LobbyManager {
 
   private toState(lobby: LobbyRecord): LobbyState {
     const players: PlayerInfo[] = [...lobby.players.values()]
+      .filter((p) => !p.kicked)
       .sort((a, b) => a.joinedAt - b.joinedAt)
       .map((p) => ({
         id: p.id,
@@ -651,6 +860,8 @@ export class LobbyManager {
       joinedAt: p.joinedAt,
       disconnectedAt: p.disconnectedAt,
       restoredPlaceholder: p.restoredPlaceholder,
+      userId: p.userId,
+      kicked: p.kicked,
       slots: p.slots.map((slot) => ({ ...slot })),
     }));
     return {
@@ -659,13 +870,17 @@ export class LobbyManager {
       createdAt: lobby.createdAt,
       gameVersionId: lobby.gameVersionId,
       ordenes: [...lobby.ordenes],
+      ownerUserId: lobby.ownerUserId,
+      updatedAt: lobby.updatedAt,
       players,
     };
   }
 
   /** Persists the full current state of one lobby transactionally. */
-  private persist(lobby: LobbyRecord): void {
+  private persist(lobby: LobbyRecord, markUpdated = true): void {
+    if (markUpdated) lobby.updatedAt = Date.now();
     this.repository.saveLobby(this.toPersistedRecord(lobby));
+    if (lobby.ownerUserId) this.broadcastOwnedLobbies(lobby.ownerUserId);
   }
 
   /**
@@ -678,7 +893,7 @@ export class LobbyManager {
     for (const p of persisted.players) {
       const disconnectedAt = p.connected ? now : p.disconnectedAt ?? now;
       const remainingMs = RECONNECT_GRACE_MS - (now - disconnectedAt);
-      if (remainingMs <= 0) {
+      if (!persisted.ownerUserId && remainingMs <= 0) {
         // Grace period already elapsed while the server was down/restarting;
         // treat exactly like a normal grace-period expiry (drop the player).
         continue;
@@ -695,11 +910,13 @@ export class LobbyManager {
         disconnectedAt,
         slots: normalizeSlotCount(p.slots),
         restoredPlaceholder: p.restoredPlaceholder,
+        userId: p.userId ?? null,
+        kicked: p.kicked ?? false,
       };
       players.set(player.id, player);
     }
 
-    if (players.size === 0) {
+    if (players.size === 0 && !persisted.ownerUserId) {
       // Nothing survived the grace-period check: clean up the stale row
       // rather than resurrecting an empty lobby nobody can reconnect to.
       this.repository.deleteLobby(persisted.id);
@@ -707,7 +924,7 @@ export class LobbyManager {
     }
 
     let hostId = persisted.hostId;
-    if (!players.has(hostId)) {
+    if (!persisted.ownerUserId && !players.has(hostId)) {
       const nextHost = [...players.values()].sort((a, b) => a.joinedAt - b.joinedAt)[0];
       hostId = nextHost.id;
     }
@@ -719,6 +936,8 @@ export class LobbyManager {
       id: persisted.id,
       hostId,
       createdAt: persisted.createdAt,
+      updatedAt: persisted.updatedAt ?? persisted.createdAt,
+      ownerUserId: persisted.ownerUserId ?? null,
       gameVersionId: isGameVersionId(persisted.gameVersionId) ? persisted.gameVersionId : null,
       ordenes: normalizeOrdenProgress(
         isGameVersionId(persisted.gameVersionId) ? persisted.gameVersionId : null,
@@ -727,13 +946,15 @@ export class LobbyManager {
       players,
       emptyTimer: null,
     };
-    for (const player of players.values()) {
-      this.armDisconnectTimer(lobby, player, remainingGraceMs(player.disconnectedAt, now));
+    if (!lobby.ownerUserId) {
+      for (const player of players.values()) {
+        this.armDisconnectTimer(lobby, player, remainingGraceMs(player.disconnectedAt, now));
+      }
     }
     this.lobbies.set(lobby.id, lobby);
     // Write back any reconciliation (dropped players, reassigned host) so
     // the on-disk state matches what's now in memory.
-    this.persist(lobby);
+    this.persist(lobby, false);
   }
 
   private broadcastState(lobby: LobbyRecord): void {
