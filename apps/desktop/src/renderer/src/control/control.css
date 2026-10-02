@@ -507,35 +507,8 @@ button:disabled {
   color: #eaeaf0;
 }
 
-.saved-hint {
-  font-size: 12px;
-  color: #9aa0ac;
-  margin-left: 8px;
-}
-
 .leave-lobby-row {
   margin-top: 12px;
-}
-
-.save-current-row,
-.save-load-row {
-  display: flex;
-  flex-direction: column;
-}
-
-.save-current-row {
-  margin-bottom: 10px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #33384a;
-}
-
-.save-load-row select {
-  background: #14161c;
-  border: 1px solid #33384a;
-  color: #eaeaf0;
-  border-radius: 4px;
-  padding: 6px 8px;
-  font-size: 13px;
 }
 
 .player-list {
@@ -564,6 +537,40 @@ button:disabled {
 
 .player-row-header button {
   margin-left: 4px;
+}
+
+.player-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.player-death-count {
+  color: #ff8b8b;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.counter-control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 10px 0;
+  padding: 8px;
+  border: 1px solid #33384a;
+  border-radius: 6px;
+  background: #14161c;
+}
+
+.counter-control-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.counter-actions {
+  display: flex;
+  gap: 4px;
 }
 
 .slot-editor {
@@ -636,11 +643,6 @@ button:disabled {
 .pokemon-picker-item-name-de {
   color: #9aa0ac;
   font-size: 9px;
-}
-
-.empty-hint {
-  color: #9aa0ac;
-  font-size: 12px;
 }
 
 .accordion-item {

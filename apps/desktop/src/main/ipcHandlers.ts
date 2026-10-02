@@ -1,19 +1,16 @@
 import { clipboard, ipcMain, shell, type BrowserWindow } from 'electron';
-import type { LobbyState, OverlaySettings, RestoreLobbyStateMessage } from '@soullink/shared';
+import type { OverlaySettings } from '@soullink/shared';
 import { safeParseClientMessage } from '@soullink/shared';
 import {
   IpcChannel,
   type ConnectPayload,
+  type ClientPreferences,
   type OverlayResizePayload,
-  type PublicSaveFile,
-  type SaveUpdatePayload,
 } from '../common/ipc';
 import { resizeOverlayAnchored } from './windows';
-import { buildRestoreMessage, deriveSaveLobbyFields } from './restore';
 import type { WsClient } from './wsClient';
-import type { SaveStateService } from './saveState/SaveStateService';
-import type { SaveFile, SaveFileMeta } from './saveState/schema';
-import type { ConnectionHistoryEntry } from './saveState/connectionHistory';
+import type { ClientStateService } from './clientState/ClientStateService';
+import type { ConnectionHistoryEntry } from './clientState/connectionHistory';
 import type { UpdaterController } from './updater';
 import { DiscordSessionStore } from './discordSessionStore';
 import { loginWithDiscord } from './discordLogin';
@@ -31,13 +28,10 @@ export interface SessionState {
 
 export interface IpcContext {
   wsClient: WsClient;
-  saveStateService: SaveStateService;
+  clientStateService: ClientStateService;
   session: SessionState;
   getOverlayWindow: () => BrowserWindow | null;
-  getLastState: () => LobbyState | null;
   setOverlayClickThrough: (ignore: boolean) => void;
-  /** Queues a local-save rejoin until Discord authentication completes. */
-  setPendingRestore: (message: RestoreLobbyStateMessage | null) => void;
   discordSessionStore: DiscordSessionStore;
   getOverlaySettings: () => OverlaySettings;
   /** Merges `partial` onto the current overlay settings, applies it (window
@@ -49,29 +43,6 @@ export interface IpcContext {
 
 const MIN_OVERLAY_SIZE = 40;
 const MAX_OVERLAY_SIZE = 4000;
-
-function toPublic(save: SaveFile): PublicSaveFile {
-  const { selfToken: _selfToken, ...rest } = save;
-  return rest;
-}
-
-/** Fields derived from the live session/lobby, shared by create and update. */
-function currentSaveFields(ctx: IpcContext): Omit<SaveFile, 'version' | 'id' | 'name' | 'updatedAt'> {
-  const state = ctx.getLastState();
-  const fields = state && ctx.session.playerId ? deriveSaveLobbyFields(state, ctx.session.playerId) : null;
-  return {
-    playerName: ctx.session.playerName,
-    serverUrl: ctx.session.serverUrl,
-    lobbyId: fields?.lobbyId ?? ctx.session.lobbyId,
-    hostId: fields?.hostId ?? null,
-    selfPlayerId: fields?.selfPlayerId ?? ctx.session.playerId,
-    selfToken: ctx.session.token,
-    players: fields?.players ?? [],
-    gameVersionId: fields?.gameVersionId ?? null,
-    ordenes: fields?.ordenes ?? [],
-    overlaySettings: ctx.getOverlaySettings(),
-  };
-}
 
 export function registerIpcHandlers(ctx: IpcContext): void {
   let loginAbortController: AbortController | null = null;
@@ -101,7 +72,12 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       ctx.session.playerName = login.username;
       ctx.session.serverUrl = serverUrl;
       ctx.session.discordToken = login.token;
-      ctx.saveStateService.recordConnection({ serverUrl, playerName: login.username });
+      ctx.clientStateService.saveClientPreferences({
+        playerName: login.username,
+        serverUrl,
+        overlaySettings: ctx.getOverlaySettings(),
+      });
+      ctx.clientStateService.recordConnection({ serverUrl, playerName: login.username });
       ctx.wsClient.connect(serverUrl);
     } finally {
       if (loginAbortController === controller) loginAbortController = null;
@@ -112,7 +88,6 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   ipcMain.handle(IpcChannel.Disconnect, () => {
     loginAbortController?.abort();
     loginAbortController = null;
-    ctx.setPendingRestore(null);
     ctx.wsClient.disconnect();
     ctx.session.lobbyId = null;
     ctx.session.playerId = null;
@@ -128,33 +103,18 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     return { ok: sent };
   });
 
-  ipcMain.handle(IpcChannel.SaveListManual, (): SaveFileMeta[] => ctx.saveStateService.listSaves());
-
   ipcMain.handle(
-    IpcChannel.SaveLoadManual,
-    (_event, id: string): PublicSaveFile => toPublic(ctx.saveStateService.loadSave(id))
+    IpcChannel.ClientPreferencesLoad,
+    (): ClientPreferences => ctx.clientStateService.loadClientPreferences()
   );
-
-  ipcMain.handle(IpcChannel.SaveCreateManual, (_event, name: string): PublicSaveFile => {
-    const save = ctx.saveStateService.createSave(name, currentSaveFields(ctx));
-    return toPublic(save);
-  });
-
-  ipcMain.handle(IpcChannel.SaveUpdateManual, (_event, { id, name }: SaveUpdatePayload): PublicSaveFile => {
-    const save = ctx.saveStateService.updateSave(id, name, currentSaveFields(ctx));
-    return toPublic(save);
-  });
-
-  ipcMain.handle(IpcChannel.SaveDeleteManual, (_event, id: string): void => ctx.saveStateService.deleteSave(id));
-
   ipcMain.handle(
     IpcChannel.ConnectionHistoryList,
-    (): ConnectionHistoryEntry[] => ctx.saveStateService.listConnectionHistory()
+    (): ConnectionHistoryEntry[] => ctx.clientStateService.listConnectionHistory()
   );
   ipcMain.handle(
     IpcChannel.ConnectionHistoryDelete,
     (_event, entry: Pick<ConnectionHistoryEntry, 'serverUrl' | 'playerName'>): ConnectionHistoryEntry[] =>
-      ctx.saveStateService.removeConnectionHistoryEntry(entry)
+      ctx.clientStateService.removeConnectionHistoryEntry(entry)
   );
 
   ipcMain.handle(IpcChannel.ClipboardWrite, (_event, text: string): void => {
@@ -162,28 +122,6 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       throw new Error('Clipboard text must not be empty.');
     }
     clipboard.writeText(text);
-  });
-
-  ipcMain.handle(
-    IpcChannel.SaveLoadAutosave,
-    (): PublicSaveFile => toPublic(ctx.saveStateService.loadAutosave().data)
-  );
-
-  ipcMain.handle(IpcChannel.SaveRestore, async (_event, id: string): Promise<PublicSaveFile> => {
-    const save = id === 'autosave' ? ctx.saveStateService.loadAutosave().data : ctx.saveStateService.loadSave(id);
-    if (!save.serverUrl) {
-      throw new Error('This save has no server URL to reconnect to.');
-    }
-    const restoreMessage = buildRestoreMessage(save);
-    if (!restoreMessage) {
-      throw new Error('This save has no lobby to restore.');
-    }
-    ctx.session.playerName = save.playerName;
-    ctx.session.serverUrl = save.serverUrl;
-    ctx.setOverlaySettings(save.overlaySettings);
-    ctx.setPendingRestore(restoreMessage);
-    await connect({ serverUrl: save.serverUrl });
-    return toPublic(save);
   });
 
   ipcMain.handle(IpcChannel.OverlayResize, (_event, { width, height }: OverlayResizePayload) => {

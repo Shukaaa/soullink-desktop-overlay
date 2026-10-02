@@ -23,9 +23,11 @@ describe('LobbyManager - lobby lifecycle', () => {
         name: 'Ash',
         isHost: true,
         connected: true,
+        deathCount: 0,
         slots: Array.from({ length: SLOT_COUNT }, () => ({ pokemonId: null })),
       },
     ]);
+    expect(state.resetCount).toBe(0);
   });
 
   it('allows a second player to join an existing lobby', () => {

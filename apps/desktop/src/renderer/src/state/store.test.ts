@@ -19,9 +19,10 @@ const emptySlots = () => Array.from({ length: SLOT_COUNT }, () => ({ pokemonId: 
 const lobbyState: LobbyState = {
   id: 'ABC123',
   hostId: 'p1',
-  players: [{ id: 'p1', name: 'Ash', isHost: true, connected: true, slots: emptySlots() }],
+  players: [{ id: 'p1', name: 'Ash', isHost: true, connected: true, deathCount: 0, slots: emptySlots() }],
   gameVersionId: null,
   ordenes: [],
+  resetCount: 0,
   createdAt: Date.now(),
 };
 

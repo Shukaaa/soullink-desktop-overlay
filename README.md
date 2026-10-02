@@ -65,10 +65,17 @@ configurable via `MAX_PLAYERS_PER_LOBBY` (default 4).
 
 The server is authoritative for lobby data. SQLite stores Discord identities and sessions,
 permanent lobby ownership, the player roster and Pokémon slots, game version, and Orden
-progress. Owned lobbies and departed players stay saved across disconnects and server
+progress, plus the shared reset counter and each player's death counter. Owned lobbies and
+departed players stay saved across disconnects and server
 restarts until the owner deletes a lobby. Each desktop app encrypts its Discord session
 token with Windows secure storage; signing in again on another device recovers ownership
 through the same Discord account. Configure the SQLite file with `DB_PATH` (default
 `./data/soullink.sqlite`, relative to the process's working directory); mount persistent
 storage in production so both sessions and lobby state survive redeploys. See
 [`.env.example`](apps/server/.env.example) and "Deploying to Railway" below.
+The desktop app does not create local lobby snapshots or manual save files. Lobby recovery
+uses the server-owned lobby list and rejoin flow; only display preferences and recent
+connection history are stored locally.
+Players can increase or decrease their own death count in the control window; the lobby
+admin can change any player's count and raise or lower the shared reset counter. Counters
+cannot go below zero. The overlay displays those counts read-only.

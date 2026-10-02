@@ -52,6 +52,8 @@ describe('LobbyManager + SqliteLobbyRepository - persistence across restarts', (
     managerA.setPokemon(memberWs, 3, 1);
     managerA.setGameVersion(hostWs, 'red');
     managerA.toggleOrden(memberWs, 1);
+    managerA.incrementDeathCounter(memberWs);
+    managerA.incrementResetCounter(hostWs);
     // Both sockets "disconnect" (simulating the process dying) without an
     // explicit LEAVE_LOBBY -- this is the realistic restart scenario.
     managerA.shutdown();
@@ -75,6 +77,8 @@ describe('LobbyManager + SqliteLobbyRepository - persistence across restarts', (
     expect(hostResult.state.gameVersionId).toBe('red');
     expect(hostResult.state.ordenes).toHaveLength(8);
     expect(hostResult.state.ordenes[1]).toBe(true);
+    expect(hostResult.state.resetCount).toBe(1);
+    expect(hostResult.state.players.find((p) => p.id === memberId)?.deathCount).toBe(1);
     const hostSlots = hostResult.state.players.find((p) => p.id === hostId)!.slots;
     expect(hostSlots).toHaveLength(SLOT_COUNT);
     expect(hostSlots[0]).toEqual({ pokemonId: 25 });

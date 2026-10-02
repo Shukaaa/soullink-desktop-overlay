@@ -135,6 +135,18 @@ function handleMessage(ws: WebSocket, raw: string, lobbyManager: LobbyManager): 
       case 'LEAVE_LOBBY':
         lobbyManager.leaveLobby(ws);
         break;
+      case 'INCREMENT_DEATH_COUNTER':
+        lobbyManager.incrementDeathCounter(ws, message.targetPlayerId);
+        break;
+      case 'DECREMENT_DEATH_COUNTER':
+        lobbyManager.decrementDeathCounter(ws, message.targetPlayerId);
+        break;
+      case 'INCREMENT_RESET_COUNTER':
+        lobbyManager.incrementResetCounter(ws);
+        break;
+      case 'DECREMENT_RESET_COUNTER':
+        lobbyManager.decrementResetCounter(ws);
+        break;
     }
   } catch (err) {
     if (err instanceof ProtocolError) {

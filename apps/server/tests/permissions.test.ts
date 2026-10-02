@@ -83,6 +83,39 @@ describe('LobbyManager - host permissions', () => {
     expect(() => manager.kickPlayer(hostWs, 'ghost-id')).toThrowError(/not found/i);
   });
 
+  it('lets players increment only their own death counter while the host can target any player', () => {
+    manager.incrementDeathCounter(memberWs);
+    manager.incrementDeathCounter(hostWs, memberId);
+
+    const state = hostWs.lastMessage<{ state: LobbyState }>()!.state;
+    expect(state.players.find((p) => p.id === memberId)?.deathCount).toBe(2);
+    expect(state.players.find((p) => p.id === hostId)?.deathCount).toBe(0);
+    expect(() => manager.incrementDeathCounter(memberWs, hostId)).toThrowError(/only the lobby host/i);
+  });
+
+  it('decrements death counters without allowing them below zero', () => {
+    manager.incrementDeathCounter(memberWs);
+    manager.decrementDeathCounter(memberWs);
+    expect(() => manager.decrementDeathCounter(memberWs)).toThrowError(/cannot go below zero/i);
+
+    manager.incrementDeathCounter(memberWs);
+    manager.decrementDeathCounter(hostWs, memberId);
+    const state = hostWs.lastMessage<{ state: LobbyState }>()!.state;
+    expect(state.players.find((p) => p.id === memberId)?.deathCount).toBe(0);
+    expect(() => manager.decrementDeathCounter(memberWs, hostId)).toThrowError(/only the lobby host/i);
+  });
+
+  it('allows only the host to change the shared reset counter and prevents negatives', () => {
+    expect(() => manager.incrementResetCounter(memberWs)).toThrowError(/only the lobby host/i);
+    expect(() => manager.decrementResetCounter(memberWs)).toThrowError(/only the lobby host/i);
+    expect(() => manager.decrementResetCounter(hostWs)).toThrowError(/cannot go below zero/i);
+
+    manager.incrementResetCounter(hostWs);
+    manager.decrementResetCounter(hostWs);
+    const state = hostWs.lastMessage<{ state: LobbyState }>()!.state;
+    expect(state.resetCount).toBe(0);
+  });
+
   it('reassigns host to the next connected player when the host leaves', () => {
     manager.leaveLobby(hostWs);
     const state = memberWs.lastMessage<{ state: LobbyState }>()!.state;

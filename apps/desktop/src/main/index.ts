@@ -1,12 +1,11 @@
 import { app, BrowserWindow, globalShortcut, Menu, safeStorage, Tray, type MenuItemConstructorOptions } from 'electron';
 import { join } from 'node:path';
-import type { LobbyState, OverlaySettings, RestoreLobbyStateMessage, ServerMessage } from '@soullink/shared';
+import type { OverlaySettings, ServerMessage } from '@soullink/shared';
 import { DEFAULT_OVERLAY_SETTINGS, normalizeOverlaySettings } from '@soullink/shared';
 import { APP_ICON_PATH, createControlWindow, createOverlayWindow, repositionOverlay } from './windows';
 import { WsClient } from './wsClient';
-import { SaveStateService } from './saveState/SaveStateService';
+import { ClientStateService } from './clientState/ClientStateService';
 import { registerIpcHandlers, type SessionState } from './ipcHandlers';
-import { deriveSaveLobbyFields } from './restore';
 import { IpcChannel, type WsEvent } from '../common/ipc';
 import type { UpdaterEvent } from '../common/updaterTypes';
 import { initUpdater } from './updater';
@@ -19,15 +18,12 @@ const preloadPath = join(__dirname, '../preload/index.js');
 
 let controlWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
-let lastLobbyState: LobbyState | null = null;
 let overlayClickThrough = true;
-let pendingRestore: RestoreLobbyStateMessage | null = null;
 let overlaySettings: OverlaySettings = DEFAULT_OVERLAY_SETTINGS;
 let tray: Tray | null = null;
 let isQuitting = false;
 
 const wsClient = new WsClient();
-const saveStateService = new SaveStateService(app.getPath('userData'));
 const discordSessionStore = new DiscordSessionStore(app.getPath('userData'), safeStorage);
 const session: SessionState = {
   playerId: null,
@@ -57,6 +53,8 @@ function broadcastUpdaterEvent(event: UpdaterEvent): void {
 
 const updaterController = initUpdater(broadcastUpdaterEvent);
 
+const clientStateService = new ClientStateService(app.getPath('userData'));
+
 function setOverlayClickThrough(ignore: boolean): void {
   overlayClickThrough = ignore;
   if (overlayWindow && !overlayWindow.isDestroyed()) {
@@ -72,7 +70,7 @@ function setOverlayClickThrough(ignore: boolean): void {
 /**
  * Merges `partial` onto the in-memory overlay settings, applies any window
  * side effect (repositioning to the newly selected corner), persists the
- * result to the debounced autosave slot, and broadcasts it to every window
+ * client preferences, and broadcasts it to every window
  * so the overlay renderer -- which never touches the filesystem itself --
  * picks up the change immediately.
  */
@@ -82,7 +80,7 @@ function setOverlaySettings(partial: Partial<OverlaySettings>): OverlaySettings 
   if (overlayWindow && !overlayWindow.isDestroyed() && overlaySettings.position !== previousPosition) {
     repositionOverlay(overlayWindow, overlaySettings.position);
   }
-  saveStateService.scheduleAutosave({
+  clientStateService.saveClientPreferences({
     playerName: session.playerName,
     serverUrl: session.serverUrl,
     overlaySettings,
@@ -120,7 +118,6 @@ function wireWsClient(): void {
   wsClient.on('message', (message: ServerMessage) => {
     if (message.type === 'AUTHENTICATED') {
       if (session.discordUserId && session.discordUserId !== message.user.id) {
-        lastLobbyState = null;
         session.lobbyId = null;
         session.playerId = null;
         session.token = null;
@@ -128,47 +125,20 @@ function wireWsClient(): void {
       session.discordUserId = message.user.id;
       session.playerName = message.user.username;
       broadcast({ kind: 'open' });
-      const queuedRestore = pendingRestore;
-      pendingRestore = null;
-      if (queuedRestore) wsClient.send(queuedRestore);
-      else if (session.lobbyId) wsClient.send({ type: 'JOIN_LOBBY', lobbyId: session.lobbyId });
+      if (session.lobbyId) wsClient.send({ type: 'JOIN_LOBBY', lobbyId: session.lobbyId });
     } else if (message.type === 'STATE') {
-      lastLobbyState = message.state;
       if (message.self) {
         session.playerId = message.self.playerId;
         session.lobbyId = message.state.id;
         session.token = message.self.token;
       }
-      if (session.playerId) {
-        const fields = deriveSaveLobbyFields(message.state, session.playerId);
-        saveStateService.scheduleAutosave({
-          playerName: session.playerName,
-          serverUrl: session.serverUrl,
-          selfToken: session.token,
-          overlaySettings,
-          ...fields,
-        });
-      }
     } else if (message.type === 'LEFT_LOBBY') {
       // We voluntarily left: drop the lobby identity but keep the
       // connection (and player name/server URL) so the renderer's status
       // tag and future CREATE_LOBBY/JOIN_LOBBY calls are unaffected.
-      lastLobbyState = null;
       session.lobbyId = null;
       session.playerId = null;
       session.token = null;
-      saveStateService.saveAutosaveNow({
-        playerName: session.playerName,
-        serverUrl: session.serverUrl,
-        selfToken: null,
-        lobbyId: null,
-        hostId: null,
-        selfPlayerId: null,
-        players: [],
-        gameVersionId: null,
-        ordenes: [],
-        overlaySettings,
-      });
     } else if (message.type === 'ERROR' && message.code === 'INVALID_TOKEN' && session.serverUrl) {
       discordSessionStore.delete(session.serverUrl);
       session.discordToken = null;
@@ -270,19 +240,14 @@ function createWindows(): void {
 }
 
 app.whenReady().then(() => {
-  const autosave = saveStateService.loadAutosave();
-  overlaySettings = autosave.data.overlaySettings;
+  overlaySettings = clientStateService.loadClientPreferences().overlaySettings;
   wireWsClient();
   registerIpcHandlers({
     wsClient,
-    saveStateService,
+    clientStateService,
     session,
     getOverlayWindow: () => overlayWindow,
-    getLastState: () => lastLobbyState,
     setOverlayClickThrough,
-    setPendingRestore: (message) => {
-      pendingRestore = message;
-    },
     discordSessionStore,
     getOverlaySettings: () => overlaySettings,
     setOverlaySettings,
@@ -316,7 +281,6 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
-  saveStateService.dispose();
   wsClient.dispose();
   tray?.destroy();
   tray = null;

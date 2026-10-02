@@ -38,6 +38,7 @@ interface PlayerRecord {
   /** Epoch ms this player was last seen disconnecting, or null while connected. */
   disconnectedAt: number | null;
   slots: PokemonSlot[];
+  deathCount: number;
   /** True for a player entry recreated from a RESTORE_LOBBY_STATE snapshot
    * that hasn't been claimed (reconnected to) by its actual device yet. */
   restoredPlaceholder: boolean;
@@ -53,6 +54,7 @@ interface LobbyRecord {
   ownerUserId: string | null;
   gameVersionId: GameVersionId | null;
   ordenes: boolean[];
+  resetCount: number;
   players: Map<string, PlayerRecord>;
   emptyTimer: NodeJS.Timeout | null;
 }
@@ -218,6 +220,7 @@ export class LobbyManager {
       restoredPlaceholder: false,
       userId: user?.id ?? null,
       kicked: false,
+      deathCount: 0,
     };
     const lobby: LobbyRecord = {
       id: lobbyId,
@@ -227,6 +230,7 @@ export class LobbyManager {
       ownerUserId: user?.id ?? null,
       gameVersionId: null,
       ordenes: [],
+      resetCount: 0,
       players: new Map([[playerId, player]]),
       emptyTimer: null,
     };
@@ -291,6 +295,7 @@ export class LobbyManager {
       restoredPlaceholder: false,
       userId: user?.id ?? null,
       kicked: false,
+      deathCount: 0,
     };
     lobby.players.set(playerId, player);
     this.connections.set(ws, { lobbyId, playerId });
@@ -430,6 +435,22 @@ export class LobbyManager {
     this.persist(lobby);
     this.broadcastState(lobby);
     logger.info('Orden toggled', { lobbyId: lobby.id, playerId: player.id, index });
+  }
+
+  incrementDeathCounter(ws: WebSocket, targetPlayerId?: string): void {
+    this.changeDeathCounter(ws, targetPlayerId, 1);
+  }
+
+  decrementDeathCounter(ws: WebSocket, targetPlayerId?: string): void {
+    this.changeDeathCounter(ws, targetPlayerId, -1);
+  }
+
+  incrementResetCounter(ws: WebSocket): void {
+    this.changeResetCounter(ws, 1);
+  }
+
+  decrementResetCounter(ws: WebSocket): void {
+    this.changeResetCounter(ws, -1);
   }
 
   kickPlayer(ws: WebSocket, targetPlayerId: string): void {
@@ -626,6 +647,7 @@ export class LobbyManager {
         restoredPlaceholder: !isSelf,
         userId: null,
         kicked: false,
+        deathCount: snap.deathCount ?? 0,
       });
     }
     const lobby: LobbyRecord = {
@@ -636,6 +658,7 @@ export class LobbyManager {
       ownerUserId: null,
       gameVersionId: snapshot.gameVersionId ?? null,
       ordenes: normalizeOrdenProgress(snapshot.gameVersionId ?? null, snapshot.ordenes ?? []),
+      resetCount: snapshot.resetCount ?? 0,
       players,
       emptyTimer: null,
     };
@@ -751,6 +774,59 @@ export class LobbyManager {
     return target;
   }
 
+  private resolveDeathCounterTarget(
+    lobby: LobbyRecord,
+    actor: PlayerRecord,
+    targetPlayerId?: string
+  ): PlayerRecord {
+    if (!targetPlayerId || targetPlayerId === actor.id) return actor;
+    this.requireHost(actor);
+    const target = lobby.players.get(targetPlayerId);
+    if (!target || target.kicked) {
+      throw new ProtocolError(ErrorCode.PLAYER_NOT_FOUND, 'Player not found in this lobby.');
+    }
+    return target;
+  }
+
+  private changeDeathCounter(ws: WebSocket, targetPlayerId: string | undefined, amount: 1 | -1): void {
+    const { lobby, player } = this.requireConnection(ws);
+    const target = this.resolveDeathCounterTarget(lobby, player, targetPlayerId);
+    if (amount < 0 && target.deathCount === 0) {
+      throw new ProtocolError(ErrorCode.INVALID_MESSAGE, 'Death counter cannot go below zero.');
+    }
+    if (amount > 0 && target.deathCount >= Number.MAX_SAFE_INTEGER) {
+      throw new ProtocolError(ErrorCode.INVALID_MESSAGE, 'Death counter is already at its maximum value.');
+    }
+    target.deathCount += amount;
+    this.persist(lobby);
+    this.broadcastState(lobby);
+    logger.info(amount > 0 ? 'Death counter incremented' : 'Death counter decremented', {
+      lobbyId: lobby.id,
+      playerId: player.id,
+      targetPlayerId: target.id,
+      deathCount: target.deathCount,
+    });
+  }
+
+  private changeResetCounter(ws: WebSocket, amount: 1 | -1): void {
+    const { lobby, player } = this.requireConnection(ws);
+    this.requireHost(player);
+    if (amount < 0 && lobby.resetCount === 0) {
+      throw new ProtocolError(ErrorCode.INVALID_MESSAGE, 'Reset counter cannot go below zero.');
+    }
+    if (amount > 0 && lobby.resetCount >= Number.MAX_SAFE_INTEGER) {
+      throw new ProtocolError(ErrorCode.INVALID_MESSAGE, 'Reset counter is already at its maximum value.');
+    }
+    lobby.resetCount += amount;
+    this.persist(lobby);
+    this.broadcastState(lobby);
+    logger.info(amount > 0 ? 'Reset counter incremented' : 'Reset counter decremented', {
+      lobbyId: lobby.id,
+      playerId: player.id,
+      resetCount: lobby.resetCount,
+    });
+  }
+
   private requireValidSlotIndex(slotIndex: number): void {
     if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= SLOT_COUNT) {
       throw new ProtocolError(ErrorCode.INVALID_SLOT, `Slot index must be between 0 and ${SLOT_COUNT - 1}.`);
@@ -836,6 +912,7 @@ export class LobbyManager {
         name: p.name,
         isHost: p.isHost,
         connected: p.connected,
+        deathCount: p.deathCount,
         slots: p.slots.map((slot) => ({ ...slot })),
       }));
 
@@ -845,6 +922,7 @@ export class LobbyManager {
       players,
       gameVersionId: lobby.gameVersionId,
       ordenes: [...lobby.ordenes],
+      resetCount: lobby.resetCount,
       createdAt: lobby.createdAt,
     };
   }
@@ -862,6 +940,7 @@ export class LobbyManager {
       restoredPlaceholder: p.restoredPlaceholder,
       userId: p.userId,
       kicked: p.kicked,
+      deathCount: p.deathCount,
       slots: p.slots.map((slot) => ({ ...slot })),
     }));
     return {
@@ -870,6 +949,7 @@ export class LobbyManager {
       createdAt: lobby.createdAt,
       gameVersionId: lobby.gameVersionId,
       ordenes: [...lobby.ordenes],
+      resetCount: lobby.resetCount,
       ownerUserId: lobby.ownerUserId,
       updatedAt: lobby.updatedAt,
       players,
@@ -912,6 +992,7 @@ export class LobbyManager {
         restoredPlaceholder: p.restoredPlaceholder,
         userId: p.userId ?? null,
         kicked: p.kicked ?? false,
+        deathCount: p.deathCount ?? 0,
       };
       players.set(player.id, player);
     }
@@ -943,6 +1024,7 @@ export class LobbyManager {
         isGameVersionId(persisted.gameVersionId) ? persisted.gameVersionId : null,
         persisted.ordenes
       ),
+      resetCount: persisted.resetCount ?? 0,
       players,
       emptyTimer: null,
     };

@@ -14,6 +14,7 @@ interface LobbyRow {
   ordenes_json: string;
   owner_user_id: string | null;
   updated_at: number;
+  reset_count: number;
 }
 
 interface PlayerRow {
@@ -28,6 +29,7 @@ interface PlayerRow {
   restored_placeholder: number;
   user_id: string | null;
   kicked: number;
+  death_count: number;
 }
 
 interface SlotRow {
@@ -66,30 +68,31 @@ export class SqliteLobbyRepository implements LobbyRepository {
     initSchema(this.db);
 
     this.upsertLobbyStmt = this.db.prepare(`
-      INSERT INTO lobbies (id, host_id, created_at, game_version_id, ordenes_json, owner_user_id, updated_at)
-      VALUES (@id, @hostId, @createdAt, @gameVersionId, @ordenesJson, @ownerUserId, @updatedAt)
+      INSERT INTO lobbies (id, host_id, created_at, game_version_id, ordenes_json, owner_user_id, updated_at, reset_count)
+      VALUES (@id, @hostId, @createdAt, @gameVersionId, @ordenesJson, @ownerUserId, @updatedAt, @resetCount)
       ON CONFLICT(id) DO UPDATE SET
         host_id = excluded.host_id,
         created_at = excluded.created_at,
         game_version_id = excluded.game_version_id,
         ordenes_json = excluded.ordenes_json,
         owner_user_id = excluded.owner_user_id,
-        updated_at = excluded.updated_at
+        updated_at = excluded.updated_at,
+        reset_count = excluded.reset_count
     `);
     this.deleteLobbyStmt = this.db.prepare('DELETE FROM lobbies WHERE id = ?');
     this.deletePlayersForLobbyStmt = this.db.prepare('DELETE FROM players WHERE lobby_id = ?');
     this.insertPlayerStmt = this.db.prepare(`
-      INSERT INTO players (id, lobby_id, name, token, is_host, connected, joined_at, disconnected_at, restored_placeholder, user_id, kicked)
-      VALUES (@id, @lobbyId, @name, @token, @isHost, @connected, @joinedAt, @disconnectedAt, @restoredPlaceholder, @userId, @kicked)
+      INSERT INTO players (id, lobby_id, name, token, is_host, connected, joined_at, disconnected_at, restored_placeholder, user_id, kicked, death_count)
+      VALUES (@id, @lobbyId, @name, @token, @isHost, @connected, @joinedAt, @disconnectedAt, @restoredPlaceholder, @userId, @kicked, @deathCount)
     `);
     this.insertSlotStmt = this.db.prepare(`
       INSERT INTO slots (player_id, slot_index, pokemon_id) VALUES (@playerId, @slotIndex, @pokemonId)
     `);
     this.selectLobbiesStmt = this.db.prepare(
-      'SELECT id, host_id, created_at, game_version_id, ordenes_json, owner_user_id, updated_at FROM lobbies'
+      'SELECT id, host_id, created_at, game_version_id, ordenes_json, owner_user_id, updated_at, reset_count FROM lobbies'
     );
     this.selectPlayersStmt = this.db.prepare(
-      'SELECT id, lobby_id, name, token, is_host, connected, joined_at, disconnected_at, restored_placeholder, user_id, kicked FROM players WHERE lobby_id = ? ORDER BY joined_at ASC'
+      'SELECT id, lobby_id, name, token, is_host, connected, joined_at, disconnected_at, restored_placeholder, user_id, kicked, death_count FROM players WHERE lobby_id = ? ORDER BY joined_at ASC'
     );
     this.selectSlotsStmt = this.db.prepare(
       'SELECT player_id, slot_index, pokemon_id FROM slots WHERE player_id = ? ORDER BY slot_index ASC'
@@ -119,6 +122,7 @@ export class SqliteLobbyRepository implements LobbyRepository {
         ordenesJson: JSON.stringify(l.ordenes),
         ownerUserId: l.ownerUserId ?? null,
         updatedAt: l.updatedAt ?? l.createdAt,
+        resetCount: l.resetCount ?? 0,
       });
       // Full aggregate replace: simplest way to guarantee players/slots
       // exactly match in-memory state without diffing. Lobbies are small
@@ -137,6 +141,7 @@ export class SqliteLobbyRepository implements LobbyRepository {
           restoredPlaceholder: player.restoredPlaceholder ? 1 : 0,
           userId: player.userId ?? null,
           kicked: player.kicked ? 1 : 0,
+          deathCount: player.deathCount ?? 0,
         });
         for (let slotIndex = 0; slotIndex < player.slots.length; slotIndex++) {
           this.insertSlotStmt.run({
@@ -191,6 +196,7 @@ export class SqliteLobbyRepository implements LobbyRepository {
         restoredPlaceholder: playerRow.restored_placeholder === 1,
         userId: playerRow.user_id,
         kicked: playerRow.kicked === 1,
+        deathCount: playerRow.death_count,
         slots,
       };
     });
@@ -202,6 +208,7 @@ export class SqliteLobbyRepository implements LobbyRepository {
       ordenes: normalizeOrdenes(lobbyRow.ordenes_json),
       ownerUserId: lobbyRow.owner_user_id,
       updatedAt: lobbyRow.updated_at,
+      resetCount: lobbyRow.reset_count,
       players,
     };
   }

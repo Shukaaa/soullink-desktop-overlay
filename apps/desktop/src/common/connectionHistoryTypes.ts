@@ -1,5 +1,5 @@
 /**
- * Plain mirror of `main/saveState/connectionHistory.ts`'s `ConnectionHistoryEntry`,
+ * Plain mirror of `main/clientState/connectionHistory.ts`'s `ConnectionHistoryEntry`,
  * defined independently for the same reason as `saveTypes.ts`: the renderer's
  * TypeScript project only includes `src/common/**`, not `src/main/**`.
  */

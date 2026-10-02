@@ -9,10 +9,11 @@ import { SlotRow } from '../components/SlotRow';
 const BASE_SLOT_SIZE = 32;
 const BASE_NAME_FONT_SIZE = 12;
 const BASE_NAME_WIDTH = 88;
-const BASE_NAME_AND_GAP_WIDTH = 96;
+const BASE_PLAYER_GAP = 8;
+const BASE_DEATH_WIDTH = 48;
+const BASE_IDENTITY_AND_GAP_WIDTH = BASE_NAME_WIDTH + BASE_DEATH_WIDTH + BASE_PLAYER_GAP;
 const BASE_ROOT_PADDING = 8;
 const BASE_ROOT_GAP = 6;
-const BASE_PLAYER_GAP = 8;
 const BASE_SLOT_GAP = 6;
 const BASE_ORDEN_GAP = 5;
 const BASE_ORDEN_FONT_SIZE = 10;
@@ -42,10 +43,8 @@ type OverlayScaleStyle = CSSProperties & {
 };
 
 /**
- * The overlay renders one row per player: the player's name, followed by
- * their six-slot row (a sprite for a filled slot, an empty cell otherwise).
- * A shared Orden list follows the player rows. Every player row uses a
- * fixed-width name column so the slot columns line up across players.
+ * The overlay renders one row per player: their death counter and name,
+ * followed by their six-slot row. A shared Orden list follows the player rows.
  */
 export function App() {
   useWsBridge();
@@ -55,7 +54,7 @@ export function App() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // The overlay renderer never touches the filesystem itself -- it asks the
-  // main process (which owns SaveStateService) for the persisted settings
+  // main process (which owns ClientStateService) for the persisted settings
   // once at startup, then stays in sync via the 'overlay-settings' broadcast
   // (see useWsBridge / reduceWsEvent) whenever the control panel changes them.
   useEffect(() => {
@@ -85,7 +84,7 @@ export function App() {
     '--overlay-root-gap': scaledPx(BASE_ROOT_GAP),
     '--overlay-player-gap': scaledPx(BASE_PLAYER_GAP),
     '--overlay-slot-gap': scaledPx(BASE_SLOT_GAP),
-    '--overlay-orden-indent': scaledPx(BASE_NAME_AND_GAP_WIDTH),
+    '--overlay-orden-indent': scaledPx(BASE_IDENTITY_AND_GAP_WIDTH),
     '--overlay-orden-gap': scaledPx(BASE_ORDEN_GAP),
     '--overlay-orden-font-size': scaledPx(BASE_ORDEN_FONT_SIZE),
     '--overlay-orden-padding-y': scaledPx(BASE_ORDEN_PADDING_Y),
@@ -99,17 +98,40 @@ export function App() {
   const slotSize = Math.round(BASE_SLOT_SIZE * scale);
   const nameStyle = {
     fontSize: Math.round(BASE_NAME_FONT_SIZE * scale),
-    flexBasis: Math.round(BASE_NAME_WIDTH * scale),
-    width: Math.round(BASE_NAME_WIDTH * scale),
+    maxWidth: Math.round(BASE_NAME_WIDTH * scale),
+  };
+  const identityStyle = {
+    width: Math.round((BASE_NAME_WIDTH + BASE_DEATH_WIDTH) * scale),
+  };
+  const deathCounterStyle = {
+    fontSize: Math.round(BASE_NAME_FONT_SIZE * scale),
   };
 
   return (
     <div ref={containerRef} className="overlay-root" style={scaleStyle}>
+      {lobby && (
+        <div className="overlay-summary" style={{ fontSize: scaledPx(BASE_NAME_FONT_SIZE) }}>
+          <span className="overlay-reset-badge">
+            <span>Resets</span>
+            <strong>{lobby.resetCount}</strong>
+          </span>
+        </div>
+      )}
       {lobby?.players.map((player, index) => (
         <div key={player.id} className={`overlay-player-row overlay-player-row--${getPlayerRowColor(index)}`}>
-          <span className="overlay-player-name" style={nameStyle} title={player.name}>
-            {player.name}
-          </span>
+          <div className="overlay-player-identity" style={identityStyle}>
+            <span
+              className="overlay-death-counter"
+              style={deathCounterStyle}
+              title={`${player.deathCount} Tode: ${player.name}`}
+              aria-label={`${player.deathCount} Tode für ${player.name}`}
+            >
+              ☠ {player.deathCount}
+            </span>
+            <span className="overlay-player-name" style={nameStyle} title={player.name}>
+              {player.name}
+            </span>
+          </div>
           <SlotRow
             slots={player.slots}
             size={slotSize}

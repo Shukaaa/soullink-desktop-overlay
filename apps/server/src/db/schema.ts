@@ -7,7 +7,7 @@ import type Database from 'better-sqlite3';
  * durable, requires no extra table, and is read/written atomically with the
  * rest of the file.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /**
  * Initializes (or safely reuses) the on-disk schema. Always uses
@@ -83,6 +83,12 @@ export function initSchema(db: Database.Database): void {
         CREATE INDEX IF NOT EXISTS idx_lobbies_owner_user_id ON lobbies(owner_user_id);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_players_lobby_user_id
           ON players(lobby_id, user_id) WHERE user_id IS NOT NULL;
+      `);
+    }
+    if (currentVersion < 5) {
+      db.exec(`
+        ALTER TABLE lobbies ADD COLUMN reset_count INTEGER NOT NULL DEFAULT 0 CHECK (reset_count >= 0);
+        ALTER TABLE players ADD COLUMN death_count INTEGER NOT NULL DEFAULT 0 CHECK (death_count >= 0);
       `);
     }
     db.pragma(`user_version = ${SCHEMA_VERSION}`);

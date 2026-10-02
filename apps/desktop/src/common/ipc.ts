@@ -5,7 +5,6 @@
  */
 import type { ClientMessage, OverlaySettings, ServerMessage } from '@soullink/shared';
 import type { ConnectionHistoryEntry } from './connectionHistoryTypes';
-import type { PublicSaveFile, SaveFile, SaveFileMeta } from './saveTypes';
 import type { UpdaterEvent } from './updaterTypes';
 
 export const IpcChannel = {
@@ -13,13 +12,7 @@ export const IpcChannel = {
   Disconnect: 'connection:disconnect',
   SendMessage: 'ws:send',
   Event: 'ws:event',
-  SaveListManual: 'save:list-manual',
-  SaveLoadManual: 'save:load-manual',
-  SaveCreateManual: 'save:create-manual',
-  SaveUpdateManual: 'save:update-manual',
-  SaveDeleteManual: 'save:delete-manual',
-  SaveLoadAutosave: 'save:load-autosave',
-  SaveRestore: 'save:restore',
+  ClientPreferencesLoad: 'client-preferences:load',
   ConnectionHistoryList: 'connection:history-list',
   ConnectionHistoryDelete: 'connection:history-delete',
   OverlayResize: 'overlay:resize',
@@ -56,14 +49,11 @@ export interface OverlayResizePayload {
   height: number;
 }
 
-export interface SaveUpdatePayload {
-  id: string;
-  name: string;
+export interface ClientPreferences {
+  playerName: string | null;
+  serverUrl: string | null;
+  overlaySettings: OverlaySettings;
 }
 
-/** The renderer never needs (or should have) the reconnect token -- main
- * process keeps it and performs restores on the renderer's behalf. */
-export type { PublicSaveFile };
-
-export type { ClientMessage, ServerMessage, SaveFile, SaveFileMeta, OverlaySettings, ConnectionHistoryEntry };
+export type { ClientMessage, ServerMessage, OverlaySettings, ConnectionHistoryEntry };
 export type { UpdaterEvent };

@@ -10,6 +10,9 @@ interface PlayerRowProps {
   editingSlotIndex: number | null;
   onSlotClick: (playerId: string, index: number) => void;
   onKick: (playerId: string) => void;
+  canChangeDeathCounter: boolean;
+  onIncrementDeathCounter: (playerId: string) => void;
+  onDecrementDeathCounter: (playerId: string) => void;
 }
 
 /** One row in the control panel's player list: identity/host/kick controls plus that player's six slots. */
@@ -21,6 +24,9 @@ export function PlayerRow({
   editingSlotIndex,
   onSlotClick,
   onKick,
+  canChangeDeathCounter,
+  onIncrementDeathCounter,
+  onDecrementDeathCounter,
 }: PlayerRowProps) {
   // Every player may edit their own slots; the host may additionally edit
   // any other player's slots. This must mirror LobbyManager.resolveEditTarget.
@@ -36,11 +42,35 @@ export function PlayerRow({
           {isSelf ? ' (du)' : ''}
           {!player.connected ? ' (wird neu verbunden …)' : ''}
         </span>
-        {isHost && !isSelf && (
-          <button type="button" onClick={() => onKick(player.id)}>
-            Entfernen
-          </button>
-        )}
+        <div className="player-row-actions">
+          <span className="player-death-count" title={`${player.deathCount} Tode`}>
+            ☠ {player.deathCount}
+          </span>
+          {canChangeDeathCounter && (
+            <>
+              <button
+                type="button"
+                onClick={() => onDecrementDeathCounter(player.id)}
+                disabled={player.deathCount === 0}
+                aria-label={`Todeszähler von ${player.name} verringern`}
+              >
+                − Tod
+              </button>
+              <button
+                type="button"
+                onClick={() => onIncrementDeathCounter(player.id)}
+                aria-label={`Todeszähler von ${player.name} erhöhen`}
+              >
+                + Tod
+              </button>
+            </>
+          )}
+          {isHost && !isSelf && (
+            <button type="button" onClick={() => onKick(player.id)}>
+              Entfernen
+            </button>
+          )}
+        </div>
       </div>
       <SlotRow
         slots={player.slots}

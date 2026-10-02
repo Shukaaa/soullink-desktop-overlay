@@ -11,16 +11,12 @@ export interface PanelVisibility {
   showLobbyDetail: boolean;
   /** The overlay click-through settings panel. */
   showOverlaySettings: boolean;
-  /** The saves panel as a whole (load dropdown etc.). */
-  showSaves: boolean;
-  /** The "save current lobby" name input + save button, inside the saves panel. */
-  showSaveCurrentAction: boolean;
 }
 
 /**
  * Decides which control-panel sections are visible for a given connection
  * status and whether a lobby is currently joined. Only a fully `open`
- * connection unlocks the lobby/overlay/save sections -- while idle, closed,
+ * connection unlocks the lobby/overlay sections -- while idle, closed,
  * connecting, or reconnecting, only the connection form (plus header/error/
  * status, handled separately by the caller) is shown.
  */
@@ -33,7 +29,5 @@ export function getPanelVisibility(connectionStatus: ConnectionStatus, hasLobby:
     showLobbyCreateJoin: isOpen && !hasLobby,
     showLobbyDetail: isOpen && hasLobby,
     showOverlaySettings: isOpen,
-    showSaves: isOpen,
-    showSaveCurrentAction: isOpen && hasLobby,
   };
 }

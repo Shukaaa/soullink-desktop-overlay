@@ -8,7 +8,7 @@ describe('nextAccordionSection', () => {
       connected: true,
       prevHasLobby: false,
       hasLobby: false,
-      current: 'saves',
+      current: 'overlay',
     });
     expect(result).toBe('lobby');
   });
@@ -30,9 +30,9 @@ describe('nextAccordionSection', () => {
       connected: true,
       prevHasLobby: true,
       hasLobby: true,
-      current: 'saves',
+      current: 'overlay',
     });
-    expect(result).toBe('saves');
+    expect(result).toBe('overlay');
   });
 
   it('leaves the current section alone (including null/collapsed) when disconnecting', () => {
@@ -52,24 +52,24 @@ describe('nextAccordionSection', () => {
       connected: true,
       prevHasLobby: true,
       hasLobby: false,
-      current: 'saves',
+      current: 'overlay',
     });
-    expect(result).toBe('saves');
+    expect(result).toBe('overlay');
   });
 });
 
 describe('toggleAccordionSection', () => {
   it('opens a different section, replacing whatever was open', () => {
-    expect(toggleAccordionSection('lobby', 'saves')).toBe('saves');
+    expect(toggleAccordionSection('lobby', 'overlay')).toBe('overlay');
     expect(toggleAccordionSection(null, 'overlay')).toBe('overlay');
   });
 
   it('collapses the section if it was already open', () => {
-    expect(toggleAccordionSection('saves', 'saves')).toBe(null);
+    expect(toggleAccordionSection('overlay', 'overlay')).toBe(null);
   });
 
-  it('only ever returns one of the three sections or null', () => {
-    const sections: Exclude<AccordionSection, null>[] = ['lobby', 'overlay', 'saves'];
+  it('only ever returns one of the two sections or null', () => {
+    const sections: Exclude<AccordionSection, null>[] = ['lobby', 'overlay'];
     for (const clicked of sections) {
       const result = toggleAccordionSection('lobby', clicked);
       expect([...sections, null]).toContain(result);

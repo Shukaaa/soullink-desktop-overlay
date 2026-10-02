@@ -21,6 +21,7 @@ export interface PersistedPlayer {
   userId?: string | null;
   /** A kicked participant remains in storage for historical tracking. */
   kicked?: boolean;
+  deathCount?: number;
   /** Always exactly SLOT_COUNT entries. */
   slots: PokemonSlot[];
 }
@@ -32,6 +33,7 @@ export interface PersistedLobby {
   createdAt: number;
   gameVersionId: GameVersionId | null;
   ordenes: boolean[];
+  resetCount?: number;
   players: PersistedPlayer[];
   /** Discord account that permanently owns and administers this lobby. */
   ownerUserId?: string | null;

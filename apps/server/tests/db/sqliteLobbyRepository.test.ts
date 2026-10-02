@@ -87,6 +87,8 @@ describe('SqliteLobbyRepository', () => {
     expect(all).toHaveLength(1);
     expect(all[0].id).toBe('LOBBY1');
     expect(all[0].players).toHaveLength(1);
+    expect(all[0].resetCount).toBe(0);
+    expect(all[0].players[0].deathCount).toBe(0);
   });
 
   it('running initSchema twice on the same database is a safe no-op', () => {
@@ -107,6 +109,7 @@ describe('SqliteLobbyRepository', () => {
     const lobby = sampleLobby({
       gameVersionId: 'red',
       ordenes: [true, false, true],
+      resetCount: 2,
       ownerUserId: 'discord-owner',
       updatedAt: 2000,
       players: [
@@ -114,6 +117,7 @@ describe('SqliteLobbyRepository', () => {
           id: 'p1',
           userId: 'discord-owner',
           isHost: true,
+          deathCount: 3,
           slots: [{ pokemonId: 25 }, ...Array.from({ length: 5 }, () => ({ pokemonId: null }))],
         }),
         samplePlayer({
@@ -124,6 +128,7 @@ describe('SqliteLobbyRepository', () => {
           isHost: false,
           connected: false,
           kicked: true,
+          deathCount: 1,
           disconnectedAt: 2000,
         }),
       ],
@@ -136,17 +141,20 @@ describe('SqliteLobbyRepository', () => {
     expect(loaded.ownerUserId).toBe('discord-owner');
     expect(loaded.updatedAt).toBe(2000);
     expect(loaded.ordenes).toEqual([true, false, true]);
+    expect(loaded.resetCount).toBe(2);
     expect(loaded.players).toHaveLength(2);
     const p1 = loaded.players.find((p) => p.id === 'p1')!;
     expect(p1.slots).toHaveLength(6);
     expect(p1.slots[0]).toEqual({ pokemonId: 25 });
     expect(p1.token).toBe('token-1');
+    expect(p1.deathCount).toBe(3);
     const p2 = loaded.players.find((p) => p.id === 'p2')!;
     expect(p2.connected).toBe(false);
     expect(p2.disconnectedAt).toBe(2000);
     expect(p2.token).toBe('token-2');
     expect(p2.userId).toBe('discord-member');
     expect(p2.kicked).toBe(true);
+    expect(p2.deathCount).toBe(1);
   });
 
   it('persists Discord users with hashed sessions', () => {
@@ -217,7 +225,7 @@ describe('SqliteLobbyRepository', () => {
     raw.close();
 
     repo = new SqliteLobbyRepository(dbPath);
-    expect(repo.loadAll()[0]).toMatchObject({ id: 'OLD1', gameVersionId: null, ordenes: [] });
+    expect(repo.loadAll()[0]).toMatchObject({ id: 'OLD1', gameVersionId: null, ordenes: [], resetCount: 0 });
   });
 
   it('migrates a version 2 database by adding the game-version field', () => {
@@ -236,6 +244,6 @@ describe('SqliteLobbyRepository', () => {
     raw.close();
 
     repo = new SqliteLobbyRepository(dbPath);
-    expect(repo.loadAll()[0]).toMatchObject({ id: 'OLD2', gameVersionId: null, ordenes: [true] });
+    expect(repo.loadAll()[0]).toMatchObject({ id: 'OLD2', gameVersionId: null, ordenes: [true], resetCount: 0 });
   });
 });

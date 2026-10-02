@@ -11,8 +11,6 @@ describe('getPanelVisibility', () => {
     expect(visibility.showLobbyCreateJoin).toBe(false);
     expect(visibility.showLobbyDetail).toBe(false);
     expect(visibility.showOverlaySettings).toBe(false);
-    expect(visibility.showSaves).toBe(false);
-    expect(visibility.showSaveCurrentAction).toBe(false);
   });
 
   it('shows the connection form only when idle or closed', () => {
@@ -36,8 +34,6 @@ describe('getPanelVisibility', () => {
       expect(visibility.showLobbyCreateJoin).toBe(false);
       expect(visibility.showLobbyDetail).toBe(false);
       expect(visibility.showOverlaySettings).toBe(false);
-      expect(visibility.showSaves).toBe(false);
-      expect(visibility.showSaveCurrentAction).toBe(false);
     }
   });
 
@@ -46,22 +42,12 @@ describe('getPanelVisibility', () => {
     expect(visibility.showLobbyCreateJoin).toBe(true);
     expect(visibility.showLobbyDetail).toBe(false);
     expect(visibility.showOverlaySettings).toBe(true);
-    expect(visibility.showSaves).toBe(true);
-    expect(visibility.showSaveCurrentAction).toBe(false);
   });
 
-  it('shows lobby detail and the save-current action when open with a lobby', () => {
+  it('shows lobby detail when open with a lobby', () => {
     const visibility = getPanelVisibility('open', true);
     expect(visibility.showLobbyCreateJoin).toBe(false);
     expect(visibility.showLobbyDetail).toBe(true);
     expect(visibility.showOverlaySettings).toBe(true);
-    expect(visibility.showSaves).toBe(true);
-    expect(visibility.showSaveCurrentAction).toBe(true);
-  });
-
-  it('shows the saves load dropdown even when open with no lobby (no save-current action though)', () => {
-    const visibility = getPanelVisibility('open', false);
-    expect(visibility.showSaves).toBe(true);
-    expect(visibility.showSaveCurrentAction).toBe(false);
   });
 });

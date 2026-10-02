@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { PokedexEntry, OverlayPosition, OverlaySettings, TooltipLanguage } from '@soullink/shared';
 import {
   DEFAULT_OVERLAY_SETTINGS,
@@ -9,7 +9,6 @@ import {
   isGameVersionId,
 } from '@soullink/shared';
 import type { ConnectionHistoryEntry } from '../../../common/connectionHistoryTypes';
-import type { SaveFileMeta } from '../../../common/saveTypes';
 import { useAppStore, type ConnectionStatus } from '../state/store';
 import { useWsBridge } from '../state/useWsBridge';
 import { PokemonPicker } from '../components/PokemonPicker';
@@ -17,7 +16,6 @@ import { PlayerRow } from '../components/PlayerRow';
 import { AccordionItem } from '../components/AccordionItem';
 import { getPanelVisibility } from './visibility';
 import { nextAccordionSection, toggleAccordionSection, type AccordionSection } from './accordion';
-import { filterSavesByServerUrl } from './saveFilter';
 import { INITIAL_UPDATER_STATE, reduceUpdaterEvent, type UpdaterState } from './updater';
 
 /** Human-readable label for the compact status tag shown once a connection
@@ -80,8 +78,6 @@ function translateErrorMessage(message: string): string {
     ['You were removed from this lobby by the admin.', 'Du wurdest vom Admin aus dieser Lobby entfernt.'],
     ['Discord session is invalid. Sign in again.', 'Deine Discord-Anmeldung ist abgelaufen. Bitte melde dich erneut an.'],
     ['Discord OAuth is not configured on this server.', 'Discord-Login ist auf diesem Server noch nicht eingerichtet.'],
-    ['This save has no server URL to reconnect to.', 'Dieser Speicherstand enthält keine Serveradresse.'],
-    ['This save has no lobby to restore.', 'Dieser Speicherstand enthält keine Lobby zum Wiederherstellen.'],
   ];
   const translation = translations.find(([english]) => message === english);
   if (translation) return translation[1];
@@ -122,11 +118,7 @@ export function App() {
   const [editingSlotIndex, setEditingSlotIndex] = useState<number | null>(null);
   const [overlayClickThrough, setOverlayClickThrough] = useState(true);
   const [overlaySettings, setOverlaySettingsState] = useState<OverlaySettings>(DEFAULT_OVERLAY_SETTINGS);
-  const [saves, setSaves] = useState<SaveFileMeta[]>([]);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [saveName, setSaveName] = useState('');
-  const [selectedSaveId, setSelectedSaveId] = useState('');
   const [history, setHistory] = useState<ConnectionHistoryEntry[]>([]);
   const [lobbyCodeCopied, setLobbyCodeCopied] = useState(false);
   const [successAlert, setSuccessAlert] = useState<string | null>(null);
@@ -135,15 +127,11 @@ export function App() {
   const [updaterState, setUpdaterState] = useState<UpdaterState>(INITIAL_UPDATER_STATE);
 
   useEffect(() => {
-    window.api.loadAutosave().then((save) => {
-      if (save.serverUrl) setServerUrl(save.serverUrl);
-      if (save.playerName) setPlayerName(save.playerName);
+    window.api.loadClientPreferences().then((preferences) => {
+      if (preferences.serverUrl) setServerUrl(preferences.serverUrl);
+      if (preferences.playerName) setPlayerName(preferences.playerName);
     });
-    // Overlay settings are fetched from main separately (rather than solely
-    // relying on the autosave payload above) so this mirrors the exact
-    // in-memory state the overlay window itself starts from at app launch.
     window.api.getOverlaySettings().then(setOverlaySettingsState);
-    refreshSaves();
     refreshHistory();
     const unsubscribe = window.api.onOverlayClickThroughChange(setOverlayClickThrough);
     return unsubscribe;
@@ -169,9 +157,7 @@ export function App() {
   }, [lobby]);
 
   // Accordion default: force the Lobby section open right after connecting
-  // (no lobby yet) and again right after a lobby is created/joined, so the
-  // user always lands on the most relevant section without it fighting a
-  // manually-opened Overlay/Saves section the rest of the time.
+  // or joining, without overriding a manually-opened Overlay section otherwise.
   const prevConnectedRef = useRef(false);
   const prevHasLobbyRef = useRef(false);
   useEffect(() => {
@@ -193,10 +179,6 @@ export function App() {
     prevConnectedRef.current = connected;
     prevHasLobbyRef.current = !!lobby;
   }, [connectionStatus, lobby]);
-
-  function refreshSaves(): void {
-    window.api.listSaves().then(setSaves);
-  }
 
   function refreshHistory(): void {
     window.api.listConnectionHistory().then(setHistory);
@@ -220,17 +202,6 @@ export function App() {
       : 0;
   const editingPlayer = editingPlayerId ? (lobby?.players.find((p) => p.id === editingPlayerId) ?? null) : null;
   const visibility = getPanelVisibility(connectionStatus, !!lobby);
-  const filteredSaves = useMemo(() => filterSavesByServerUrl(saves, serverUrl), [saves, serverUrl]);
-
-  // If the saved server URL changes such that the previously-selected save
-  // is no longer for this server, drop the selection rather than leaving a
-  // stale/invisible id selected.
-  useEffect(() => {
-    if (selectedSaveId && !filteredSaves.some((s) => s.id === selectedSaveId)) {
-      setSelectedSaveId('');
-      setSaveName('');
-    }
-  }, [filteredSaves, selectedSaveId]);
 
   function connect(forceDiscordLogin = false) {
     // Flip to 'connecting' immediately rather than waiting for the IPC round
@@ -319,6 +290,28 @@ export function App() {
     window.api.send({ type: 'KICK_PLAYER', playerId });
   }
 
+  function incrementDeathCounter(playerId: string) {
+    window.api.send({
+      type: 'INCREMENT_DEATH_COUNTER',
+      ...(playerId === selfPlayerId ? {} : { targetPlayerId: playerId }),
+    });
+  }
+
+  function decrementDeathCounter(playerId: string) {
+    window.api.send({
+      type: 'DECREMENT_DEATH_COUNTER',
+      ...(playerId === selfPlayerId ? {} : { targetPlayerId: playerId }),
+    });
+  }
+
+  function incrementResetCounter() {
+    window.api.send({ type: 'INCREMENT_RESET_COUNTER' });
+  }
+
+  function decrementResetCounter() {
+    window.api.send({ type: 'DECREMENT_RESET_COUNTER' });
+  }
+
   function onSlotClick(playerId: string, index: number) {
     if (editingPlayerId === playerId && editingSlotIndex === index) {
       setEditingPlayerId(null);
@@ -369,63 +362,6 @@ export function App() {
     setOverlaySettingsState((current) => ({ ...current, ...partial }));
     const applied = await window.api.updateOverlaySettings(partial);
     setOverlaySettingsState(applied);
-  }
-
-  function onSelectSave(id: string) {
-    setSelectedSaveId(id);
-    setSaveError(null);
-    const meta = saves.find((s) => s.id === id);
-    setSaveName(meta ? meta.name : '');
-  }
-
-  /** Creates a new save when nothing is selected, or overwrites the selected one. */
-  async function saveCurrent() {
-    const name = saveName.trim();
-    if (!name) return;
-    setSaveError(null);
-    try {
-      if (selectedSaveId) {
-        await window.api.updateSave(selectedSaveId, name);
-        showSuccessAlert(`Speicherstand "${name}" aktualisiert.`);
-      } else {
-        const created = await window.api.createSave(name);
-        setSelectedSaveId(created.id);
-        showSuccessAlert(`Speicherstand "${name}" gespeichert.`);
-      }
-      refreshSaves();
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Speichern fehlgeschlagen.');
-    }
-  }
-
-  async function loadSelectedSave() {
-    if (!selectedSaveId) return;
-    setSaveError(null);
-    try {
-      const save = await window.api.restoreSave(selectedSaveId);
-      if (save.serverUrl) setServerUrl(save.serverUrl);
-      if (save.playerName) setPlayerName(save.playerName);
-      setOverlaySettingsState(save.overlaySettings);
-      showSuccessAlert(`Speicherstand "${save.name}" geladen.`);
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Laden fehlgeschlagen.');
-    }
-  }
-
-  async function handleDeleteSave(id: string) {
-    setSaveError(null);
-    try {
-      const deletedSave = saves.find((save) => save.id === id);
-      await window.api.deleteSave(id);
-      if (selectedSaveId === id) {
-        setSelectedSaveId('');
-        setSaveName('');
-      }
-      refreshSaves();
-      showSuccessAlert(`Speicherstand "${deletedSave?.name ?? 'unbekannt'}" gelöscht.`);
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Löschen fehlgeschlagen.');
-    }
   }
 
   const updateAvailable = updaterState.status === 'available' || updaterState.status === 'downloaded';
@@ -631,6 +567,26 @@ export function App() {
                   {lobbyCodeCopied ? 'Kopiert' : 'Code kopieren'}
                 </button>
               </div>
+              <div className="counter-control-row">
+                <span className="counter-control-label">
+                  Reset-Counter <strong>{lobby.resetCount}</strong>
+                </span>
+                {isHost && (
+                  <div className="counter-actions">
+                    <button
+                      type="button"
+                      onClick={decrementResetCounter}
+                      disabled={lobby.resetCount === 0}
+                      aria-label="Reset-Counter verringern"
+                    >
+                      − Reset
+                    </button>
+                    <button type="button" onClick={incrementResetCounter} aria-label="Reset-Counter erhöhen">
+                      + Reset
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="orden-panel">
                 <label className="orden-version-control">
                   Spielversion
@@ -719,6 +675,9 @@ export function App() {
                     editingSlotIndex={editingSlotIndex}
                     onSlotClick={onSlotClick}
                     onKick={kickPlayer}
+                    canChangeDeathCounter={isHost || p.id === selfPlayerId}
+                    onIncrementDeathCounter={incrementDeathCounter}
+                    onDecrementDeathCounter={decrementDeathCounter}
                   />
                 ))}
               </div>
@@ -818,67 +777,6 @@ export function App() {
         </AccordionItem>
       )}
 
-      {visibility.showSaves && (
-        <AccordionItem
-          id="saves"
-          title="Speicherstände"
-          isOpen={openSection === 'saves'}
-          onToggle={() => setOpenSection((current) => toggleAccordionSection(current, 'saves'))}
-        >
-          {visibility.showSaveCurrentAction && (
-            <div className="save-current-row">
-              <label>
-                Name des Speicherstands
-                <input
-                  value={saveName}
-                  onChange={(e) => setSaveName(e.target.value)}
-                  placeholder={new Date().toLocaleString()}
-                />
-              </label>
-              <div className="button-row">
-                <button type="button" onClick={saveCurrent} disabled={!saveName.trim()}>
-                  {selectedSaveId ? 'Überschreiben' : 'Speichern'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {saveError && <p className="error-line">{saveError}</p>}
-          <p className="hint-line">
-            Orden- und Pokémon-Fortschritt werden vom Server gespeichert. Beim Laden wird der gespeicherten Lobby
-            wieder beigetreten.
-          </p>
-
-          <div className="save-load-row">
-            <label>
-              Vorhandene Speicherstände
-              <select value={selectedSaveId} onChange={(e) => onSelectSave(e.target.value)}>
-                <option value="">Neuer Speicherstand</option>
-                {filteredSaves.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.playerCount} Spieler, {new Date(s.updatedAt).toLocaleString()})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="button-row">
-              <button type="button" onClick={loadSelectedSave} disabled={!selectedSaveId}>
-                Server-Lobby beitreten
-              </button>
-              <button type="button" onClick={() => handleDeleteSave(selectedSaveId)} disabled={!selectedSaveId}>
-                Löschen
-              </button>
-            </div>
-            {filteredSaves.length === 0 && (
-              <p className="empty-hint">
-                {saves.length === 0
-                  ? 'Noch keine Speicherstände vorhanden.'
-                  : 'Für diesen Server gibt es noch keine Speicherstände.'}
-              </p>
-            )}
-          </div>
-        </AccordionItem>
-      )}
       {successAlert && (
         <div className="success-alert" role="status">
           {successAlert}

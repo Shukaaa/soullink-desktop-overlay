@@ -26,6 +26,7 @@ const trimmedName = z.string().trim().min(1).max(MAX_NAME_LENGTH);
 const idString = z.string().trim().min(1).max(64);
 const slotIndex = z.number().int().min(0).max(SLOT_COUNT - 1);
 const pokemonId = z.number().int().positive();
+const counterValue = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 
 export const AuthenticateMessage = z.object({
   type: z.literal('AUTHENTICATE'),
@@ -60,6 +61,7 @@ export const playerSnapshotSchema = z.object({
   id: idString,
   name: trimmedName,
   isHost: z.boolean(),
+  deathCount: counterValue.optional(),
   slots: z.array(pokemonSlotSchema).length(SLOT_COUNT),
 });
 export type PlayerSnapshot = z.infer<typeof playerSnapshotSchema>;
@@ -125,6 +127,28 @@ export const LeaveLobbyMessage = z.object({
 });
 export type LeaveLobbyMessage = z.infer<typeof LeaveLobbyMessage>;
 
+export const IncrementDeathCounterMessage = z.object({
+  type: z.literal('INCREMENT_DEATH_COUNTER'),
+  targetPlayerId: idString.optional(),
+});
+export type IncrementDeathCounterMessage = z.infer<typeof IncrementDeathCounterMessage>;
+
+export const DecrementDeathCounterMessage = z.object({
+  type: z.literal('DECREMENT_DEATH_COUNTER'),
+  targetPlayerId: idString.optional(),
+});
+export type DecrementDeathCounterMessage = z.infer<typeof DecrementDeathCounterMessage>;
+
+export const IncrementResetCounterMessage = z.object({
+  type: z.literal('INCREMENT_RESET_COUNTER'),
+});
+export type IncrementResetCounterMessage = z.infer<typeof IncrementResetCounterMessage>;
+
+export const DecrementResetCounterMessage = z.object({
+  type: z.literal('DECREMENT_RESET_COUNTER'),
+});
+export type DecrementResetCounterMessage = z.infer<typeof DecrementResetCounterMessage>;
+
 /**
  * Legacy local-save message shape. Authenticated Discord sessions only
  * reconnect to rows already persisted by the server; their client snapshots
@@ -145,6 +169,7 @@ export const RestoreLobbyStateMessage = z.object({
         .nullable()
         .optional(),
       ordenes: z.array(z.boolean()).max(MAX_ORDEN_COUNT).optional(),
+      resetCount: counterValue.optional(),
     })
     .optional(),
 });
@@ -163,6 +188,10 @@ export const ClientMessage = z.discriminatedUnion('type', [
   SetGameVersionMessage,
   KickPlayerMessage,
   LeaveLobbyMessage,
+  IncrementDeathCounterMessage,
+  DecrementDeathCounterMessage,
+  IncrementResetCounterMessage,
+  DecrementResetCounterMessage,
   RestoreLobbyStateMessage,
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;

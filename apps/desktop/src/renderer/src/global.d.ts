@@ -1,20 +1,19 @@
 /// <reference types="vite/client" />
 import type { ClientMessage, OverlaySettings } from '@soullink/shared';
-import type { ConnectionHistoryEntry, ConnectPayload, OverlayResizePayload, PublicSaveFile, WsEvent } from '../../../common/ipc';
-import type { SaveFileMeta } from '../../../common/saveTypes';
+import type {
+  ClientPreferences,
+  ConnectionHistoryEntry,
+  ConnectPayload,
+  OverlayResizePayload,
+  WsEvent,
+} from '../../../common/ipc';
 import type { UpdaterEvent } from '../../../common/updaterTypes';
 
 export interface SoulLinkApi {
   connect(payload: ConnectPayload): Promise<void>;
   disconnect(): Promise<void>;
   send(message: ClientMessage): Promise<{ ok: boolean; error?: string }>;
-  listSaves(): Promise<SaveFileMeta[]>;
-  loadSave(id: string): Promise<PublicSaveFile>;
-  createSave(name: string): Promise<PublicSaveFile>;
-  updateSave(id: string, name: string): Promise<PublicSaveFile>;
-  deleteSave(id: string): Promise<void>;
-  loadAutosave(): Promise<PublicSaveFile>;
-  restoreSave(id: string): Promise<PublicSaveFile>;
+  loadClientPreferences(): Promise<ClientPreferences>;
   listConnectionHistory(): Promise<ConnectionHistoryEntry[]>;
   deleteConnectionHistoryEntry(
     entry: Pick<ConnectionHistoryEntry, 'serverUrl' | 'playerName'>

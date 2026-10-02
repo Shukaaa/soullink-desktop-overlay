@@ -24,6 +24,7 @@ export interface PlayerInfo {
   name: string;
   isHost: boolean;
   connected: boolean;
+  deathCount: number;
   /** Always exactly SLOT_COUNT entries. */
   slots: PokemonSlot[];
 }
@@ -36,6 +37,7 @@ export interface LobbyState {
   gameVersionId: GameVersionId | null;
   /** Shared lobby-wide progress; the array length comes from that game's template. */
   ordenes: boolean[];
+  resetCount: number;
   createdAt: number;
 }
 

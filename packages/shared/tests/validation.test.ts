@@ -99,6 +99,30 @@ describe('protocol validation', () => {
     expect(safeParseClientMessage({ type: 'LEAVE_LOBBY' }).success).toBe(true);
   });
 
+  it('accepts death-counter increments for self and host-targeted players', () => {
+    expect(safeParseClientMessage({ type: 'INCREMENT_DEATH_COUNTER' }).success).toBe(true);
+    expect(
+      safeParseClientMessage({ type: 'INCREMENT_DEATH_COUNTER', targetPlayerId: 'p2' }).success
+    ).toBe(true);
+    expect(safeParseClientMessage({ type: 'INCREMENT_DEATH_COUNTER', targetPlayerId: '' }).success).toBe(false);
+  });
+
+  it('accepts death-counter decrements for self and host-targeted players', () => {
+    expect(safeParseClientMessage({ type: 'DECREMENT_DEATH_COUNTER' }).success).toBe(true);
+    expect(
+      safeParseClientMessage({ type: 'DECREMENT_DEATH_COUNTER', targetPlayerId: 'p2' }).success
+    ).toBe(true);
+    expect(safeParseClientMessage({ type: 'DECREMENT_DEATH_COUNTER', targetPlayerId: '' }).success).toBe(false);
+  });
+
+  it('accepts an increment-reset-counter message', () => {
+    expect(safeParseClientMessage({ type: 'INCREMENT_RESET_COUNTER' }).success).toBe(true);
+  });
+
+  it('accepts a decrement-reset-counter message', () => {
+    expect(safeParseClientMessage({ type: 'DECREMENT_RESET_COUNTER' }).success).toBe(true);
+  });
+
   it('rejects RESTORE_LOBBY_STATE with a snapshot that has the wrong slot count', () => {
     const result = safeParseClientMessage({
       type: 'RESTORE_LOBBY_STATE',

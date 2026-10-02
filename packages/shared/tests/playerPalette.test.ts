@@ -2,17 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { PLAYER_ROW_COLORS, getPlayerRowColor } from '../src/playerPalette';
 
 describe('getPlayerRowColor', () => {
-  it('cycles red, blue, green, yellow for the first four rows', () => {
+  it('assigns six distinct colors to the first six rows', () => {
     expect(getPlayerRowColor(0)).toBe('red');
     expect(getPlayerRowColor(1)).toBe('blue');
     expect(getPlayerRowColor(2)).toBe('green');
     expect(getPlayerRowColor(3)).toBe('yellow');
+    expect(getPlayerRowColor(4)).toBe('purple');
+    expect(getPlayerRowColor(5)).toBe('orange');
   });
 
-  it('wraps back to the start of the palette after 4 rows', () => {
-    expect(getPlayerRowColor(4)).toBe('red');
-    expect(getPlayerRowColor(5)).toBe('blue');
-    expect(getPlayerRowColor(8)).toBe('red');
+  it('wraps back to the start of the palette after 6 rows', () => {
+    expect(getPlayerRowColor(6)).toBe('red');
+    expect(getPlayerRowColor(7)).toBe('blue');
+    expect(getPlayerRowColor(12)).toBe('red');
   });
 
   it('is deterministic for a given index', () => {
@@ -26,6 +28,6 @@ describe('getPlayerRowColor', () => {
   });
 
   it('handles negative indices gracefully', () => {
-    expect(getPlayerRowColor(-1)).toBe('yellow');
+    expect(getPlayerRowColor(-1)).toBe('orange');
   });
 });

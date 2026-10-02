@@ -5,7 +5,7 @@ body {
   overflow: hidden;
 }
 
-/* Keep the overlay minimal: player rows plus the shared Orden list. */
+/* Keep the overlay minimal: counters, player rows, and shared Orden progress. */
 .overlay-root {
   display: inline-flex;
   flex-direction: column;
@@ -20,8 +20,60 @@ body {
   gap: var(--overlay-player-gap, 8px);
 }
 
+.overlay-summary {
+  display: flex;
+  align-self: stretch;
+  justify-content: flex-end;
+  color: #eaeaf0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
+
+.overlay-reset-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--overlay-cell-radius, 4px);
+  background: rgba(10, 12, 18, 0.65);
+}
+
+.overlay-reset-badge > span {
+  color: #cbd3ff;
+  font-weight: 600;
+}
+
+.overlay-reset-badge strong {
+  color: #fff;
+}
+
+.overlay-player-identity {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0;
+  min-width: 0;
+}
+
+.overlay-death-counter {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  margin-right: 1em;
+  padding: 1px 4px;
+  border: 1px solid var(--row-accent-soft, rgba(255, 255, 255, 0.25));
+  border-radius: var(--overlay-cell-radius, 4px);
+  background: rgba(10, 12, 18, 0.65);
+  white-space: nowrap;
+  color: var(--row-accent, #f2f2f5);
+  font-weight: 700;
+  text-align: right;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+  box-shadow: 0 0 4px 0 var(--row-accent-soft, transparent);
+}
+
 /* Deterministic per-row accent palette (see @soullink/shared getPlayerRowColor),
-   cycling red/blue/green/yellow by row index. Each row exposes its accent as
+   cycling six colors by row index. Each row exposes its accent as
    CSS variables so the name and slot-cell rules below stay in one place
    instead of duplicating colors per palette entry. */
 .overlay-player-row--red {
@@ -44,11 +96,22 @@ body {
   --row-accent-soft: rgba(242, 211, 76, 0.45);
 }
 
+.overlay-player-row--purple {
+  --row-accent: #c084fc;
+  --row-accent-soft: rgba(192, 132, 252, 0.45);
+}
+
+.overlay-player-row--orange {
+  --row-accent: #fb923c;
+  --row-accent-soft: rgba(251, 146, 60, 0.45);
+}
+
 /* Fixed width so every row's slots start at the same x offset, keeping
    slot columns (and therefore SoulLink pairings) aligned across players. */
 .overlay-player-name {
-  flex: 0 0 88px;
-  width: 88px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 88px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -1,8 +1,8 @@
 /**
- * At most one of the Lobby / Overlay / Saves control-panel sections may be
+ * At most one of the Lobby / Overlay control-panel sections may be
  * open (accordion behaviour). `null` means everything is collapsed.
  */
-export type AccordionSection = 'lobby' | 'overlay' | 'saves' | null;
+export type AccordionSection = 'lobby' | 'overlay' | null;
 
 export interface AccordionTransitionInput {
   /** Whether the connection was already `open` before this render. */

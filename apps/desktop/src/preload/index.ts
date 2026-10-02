@@ -2,14 +2,13 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { ClientMessage, OverlaySettings } from '@soullink/shared';
 import {
   IpcChannel,
+  type ClientPreferences,
   type ConnectionHistoryEntry,
   type ConnectPayload,
   type OverlayResizePayload,
-  type PublicSaveFile,
   type UpdaterEvent,
   type WsEvent,
 } from '../common/ipc';
-import type { SaveFileMeta } from '../common/saveTypes';
 
 /**
  * The only surface renderer code can use to reach the outside world.
@@ -21,14 +20,7 @@ const api = {
   disconnect: (): Promise<void> => ipcRenderer.invoke(IpcChannel.Disconnect),
   send: (message: ClientMessage): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke(IpcChannel.SendMessage, message),
-  listSaves: (): Promise<SaveFileMeta[]> => ipcRenderer.invoke(IpcChannel.SaveListManual),
-  loadSave: (id: string): Promise<PublicSaveFile> => ipcRenderer.invoke(IpcChannel.SaveLoadManual, id),
-  createSave: (name: string): Promise<PublicSaveFile> => ipcRenderer.invoke(IpcChannel.SaveCreateManual, name),
-  updateSave: (id: string, name: string): Promise<PublicSaveFile> =>
-    ipcRenderer.invoke(IpcChannel.SaveUpdateManual, { id, name }),
-  deleteSave: (id: string): Promise<void> => ipcRenderer.invoke(IpcChannel.SaveDeleteManual, id),
-  loadAutosave: (): Promise<PublicSaveFile> => ipcRenderer.invoke(IpcChannel.SaveLoadAutosave),
-  restoreSave: (id: string): Promise<PublicSaveFile> => ipcRenderer.invoke(IpcChannel.SaveRestore, id),
+  loadClientPreferences: (): Promise<ClientPreferences> => ipcRenderer.invoke(IpcChannel.ClientPreferencesLoad),
   listConnectionHistory: (): Promise<ConnectionHistoryEntry[]> =>
     ipcRenderer.invoke(IpcChannel.ConnectionHistoryList),
   deleteConnectionHistoryEntry: (
